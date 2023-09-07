@@ -1,34 +1,50 @@
+use log::{error, warn};
 use std::{
     env,
     fs::File,
-    io::{stdin, BufReader, Read},
+    io::{stdin, BufRead, BufReader, Error, Read},
     path::Path,
 };
 
-fn read_bytecode<R: Read>(reader: R) -> Vec<u8> {
-    let mut reader = BufReader::new(reader);
-    let mut buffer = Vec::new();
-    let mut bytecode: Vec<u8> = Vec::new();
+fn read_bytecode<R: Read>(reader: R) -> Option<Vec<u32>> {
+    let reader = BufReader::new(reader);
+    let lines: Vec<Result<String, Error>> = reader.lines().collect();
+    let bytecode: String;
 
-    while let Ok(bytes_read) = reader.read_to_end(&mut buffer) {
-        if bytes_read == 0 {
-            break;
+    if let Some(last_line) = lines.last() {
+        if let Ok(last_line) = last_line {
+            bytecode = last_line.clone();
+        } else {
+            warn!("Could not parse input: {:?}", last_line);
+            return None;
         }
-
-        // Check if the first byte is an integer
-        for byte in &buffer {
-            if byte.is_ascii_digit() {
-                bytecode.push(*byte);
-            }
-        }
-
-        buffer.clear();
+    } else {
+        warn!("Could not parse input: {:?}", lines);
+        return None;
     }
-    println!("Bytecode: {:?}", bytecode);
-    bytecode
+
+    for char in bytecode.chars() {
+        if !char.is_ascii_hexdigit() {
+            warn!(
+                "Illegal input, contains non alphanumeric characters: {}",
+                bytecode
+            );
+            return None;
+        }
+    }
+
+    let radix: u32 = 16;
+    let bytecode: Vec<char> = bytecode.chars().collect();
+    let bytecode = bytecode
+        .chunks(2)
+        .map(|x| x[0].to_digit(radix).unwrap() * 10 + x[1].to_digit(radix).unwrap())
+        .collect::<Vec<_>>();
+
+    Some(bytecode)
 }
 
 fn main() {
+    env_logger::init();
     let args: Vec<String> = env::args().collect();
 
     if args.len() == 1 {
@@ -40,10 +56,10 @@ fn main() {
         if let Ok(file) = File::open(file_path) {
             read_bytecode(file);
         } else {
-            eprintln!("Error: Unable to open file '{}'", &args[1]);
+            error!("Error: Unable to open file '{}'", &args[1]);
         }
     } else {
-        eprintln!("Usage: {} [file]", &args[0]);
+        error!("Usage: {} [file]", &args[0]);
     }
 }
 
@@ -51,11 +67,15 @@ fn main() {
 mod tests {
     use std::io::Cursor;
 
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
     #[test]
-    fn read_bytecode() {
+    fn read_valid_bytecode() {
         let bytes: &'static [u8] = b"\
-            ======= storecontract/Store.sol:Store =======\n
-Binary of the runtime part:\n
+            ======= storecontract/Store.sol:Store =======\n\
+Binary of the runtime part:\n\
 608060405234801561001057600080fd5b50600436106100365760003560e\
 01c80636057361d1461003b5780638f88708b14610057575b600080fd5b61\
 005560048036038101906100509190610115565b610087565b005b6100716\
@@ -74,18 +94,42 @@ b1836100df565b92508282039050818111156101c9576101c861016c565b5\
 b92915050565b60006101da826100df565b91506101e5836100df565b9250\
 8282019050808211156101fd576101fc61016c565b5b9291505056fea2646\
 9706673582212206471fae051fe349afbc0803628e924a4d57b36e4067d38\
-265220429afd34242d64736f6c63430008130033
+265220429afd34242d64736f6c63430008130033\
 \n";
         let cursor = Cursor::new(bytes);
-        let bytecode = super::read_bytecode(cursor);
-        // '6' is 54 in ascii
-        assert_eq!(54, *bytecode.first().unwrap());
-        assert_eq!(51, *bytecode.last().unwrap());
+        let bytecode = super::read_bytecode(cursor).expect("Could not parse input");
+        assert_eq!(60, *bytecode.first().unwrap());
+        assert_eq!(33, *bytecode.last().unwrap());
 
-        let bytes: &'static [u8] = b"1";
+        let bytes: &'static [u8] = b"11";
         let cursor = Cursor::new(bytes);
-        let bytecode = super::read_bytecode(cursor);
-        assert_eq!(49, *bytecode.first().unwrap());
-        assert_eq!(49, *bytecode.last().unwrap());
+        let bytecode = super::read_bytecode(cursor).expect("Could not parse input");
+        assert_eq!(11, *bytecode.first().unwrap());
+        assert_eq!(11, *bytecode.last().unwrap());
+    }
+
+    #[test]
+    fn invalid_input_space() {
+        init();
+        let input = "Hello world!";
+        let cursur = Cursor::new(input);
+        let result = super::read_bytecode(cursur);
+        assert!(result.is_none());
+    }
+    #[test]
+    fn invalid_input_no_hex() {
+        init();
+        let input = "Helloworld";
+        let cursur = Cursor::new(input);
+        let result = super::read_bytecode(cursur);
+        assert!(result.is_none());
+    }
+    #[test]
+    fn empty_input() {
+        init();
+        let input = "";
+        let cursur = Cursor::new(input);
+        let result = super::read_bytecode(cursur);
+        assert!(result.is_none());
     }
 }
