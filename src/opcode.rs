@@ -1,7 +1,9 @@
 use core::fmt;
-use std::collections::HashMap;
+use std::{collections::HashMap, io::Error};
 
-#[derive(Clone, Default, PartialEq)]
+use crate::instruction::{Hex, Instruction, ParsedInstruction};
+
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct OpCode {
     pub code: u32,
     pub input_arguments: u32,
@@ -12,11 +14,41 @@ pub struct OpCode {
     pub stack_inputs: u32,
     pub stack_outputs: u32,
     pub short_name: String,
+    //pub parse: fn(
+    //    bytecode: &HashMap<Hex, Instruction>,
+    //    instruction: &Instruction,
+    //    pc: &mut Hex,
+    //    stack: &mut Vec<Hex>,
+    //    memory: &mut Vec<Hex>,
+    //) -> Result<ParsedInstruction, Error>,
 }
 
 impl fmt::Debug for OpCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}(0x{:02x})", self.short_name, self.code)
+    }
+}
+
+fn default_opcode_parse(
+    _bytecode: &HashMap<Hex, Instruction>,
+    _pc: &mut Hex,
+    _stack: &mut Vec<Hex>,
+    _memory: &mut Vec<Hex>,
+) -> Result<(), Error> {
+    Ok(())
+}
+
+impl Default for OpCode {
+    fn default() -> Self {
+        Self {
+            code: Default::default(),
+            input_arguments: Default::default(),
+            operator_index: Default::default(),
+            stack_inputs: Default::default(),
+            stack_outputs: Default::default(),
+            short_name: Default::default(),
+            //parse: default_opcode_parse,
+        }
     }
 }
 

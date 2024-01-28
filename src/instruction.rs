@@ -34,13 +34,11 @@ impl From<u32> for Hex {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq, Eq, Hash)]
 pub struct Instruction {
     pub args: Vec<Hex>,
     pub opcode: OpCode,
     pub index: Hex,
-
-    pub parsed: bool,
 }
 
 impl fmt::LowerHex for Hex {
@@ -63,8 +61,8 @@ impl fmt::Display for Hex {
     }
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct BytecodeInstruction {
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
+pub struct ParsedInstruction {
     pub instruction: Instruction,
     pub label: String,
 
@@ -77,42 +75,43 @@ impl std::fmt::Debug for Instruction {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum JumpType {
     Conditional,
     Unconditional,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct JumpInstruction {
     pub instruction: Instruction,
     pub jump_type: JumpType,
-    pub target: Hex,
+    pub target: Option<Hex>,
     pub source: Hex,
 }
 impl std::fmt::Debug for JumpInstruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "type: {:?}, target {:?}, source: {:04x}",
+            "(type: {:?}, target {:?}, source: {:04x})",
             &self.jump_type, &self.target, &self.source
         )
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct InstructionSet {
-    pub instructions: Vec<BytecodeInstruction>,
-    pub jumpdest: Hex,
+    pub instructions: Vec<ParsedInstruction>,
+    pub start: Hex,
     pub end: Hex,
 
     pub jumps: Vec<JumpInstruction>,
+    pub jump_origins: Vec<JumpInstruction>,
 
     pub stack: Vec<Hex>,
 }
 impl std::fmt::Debug for InstructionSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "start: {:04x}", self.jumpdest).unwrap();
+        writeln!(f, "start: {:04x}", self.start).unwrap();
         for instruction in &self.instructions {
             writeln!(
                 f,
@@ -125,12 +124,18 @@ impl std::fmt::Debug for InstructionSet {
             )
             .unwrap();
         }
+        writeln!(
+            f,
+            "start: {}, end: {}, jumps: {:?}, jump_origins: {:?}, stack: {:?}",
+            self.start, self.end, self.jumps, self.jump_origins, self.stack
+        )
+        .unwrap();
         Ok(())
     }
 }
 
 impl InstructionSet {
-    pub fn push(&mut self, value: BytecodeInstruction) {
+    pub fn push(&mut self, value: ParsedInstruction) {
         self.instructions.push(value);
     }
     pub fn len(&self) -> usize {
