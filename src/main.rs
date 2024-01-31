@@ -3,7 +3,7 @@ mod opcode;
 mod parser;
 mod utils;
 
-use log::{error, warn};
+use log::{error, info, warn};
 use parser::Parser;
 use std::{
     env,
@@ -85,31 +85,11 @@ fn main() {
         return;
     }
 
-    // First, we have bytecode. Bytecode is a continuous array of hexidecimal integers. In order to
-    // be able to parse it, we need to parse it in a few separate steps:
-    //
-    // 1. Convert the continuous array to 'instructions'. An instruction is a data object which, as
-    //    the first argument, has the opcode and following its arguments required to function. For
-    //    example, '60 40' is an instruction, since the opcode is PUSH1 and there is 1 argument.
-    // 2. Now that we have instructions, we can group them into instruction sets. These sets start
-    //    where ever the previous set stops and continuous until it ends itself, for example at a
-    //    'JUMP' instruction, 'STOP' or those functions.
-    // 3. Now that we have an array of instruction sets, we can look if we can figure out which
-    //    sets jump to which sets, linking them together.
-    // 4. Also, what we need to do is to find all conditional statements, since they _really_
-    //    control the flow in the application. If we can identify them, we may also identify their
-    //    required inputs by walking the control flow backwards through the application and write
-    //    automated tests for a contract.
-    // 5. If we then have all links from step 3, we can do whatever we want in terms of sequences
-    //    in the contract; we know now which PUSH instructions push the JUMP addressses for all
-    //    jumps in the contract.
-    // 6. We can also inject instructions in instruction sets since we know which PUSH values we
-    //    need to update to which JUMPDESTS.
-    //
-
     let mut parser = Parser::new(bytecode);
-    let mut jumps = parser.create_instruction_sets();
-    parser.parse_jumps(&mut jumps);
+    if !parser.all_jumps_resolved() {
+        info!("Resolving jumps");
+        parser.resolve_jumps();
+    }
 }
 
 #[cfg(test)]

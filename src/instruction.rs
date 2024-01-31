@@ -1,5 +1,5 @@
 use core::fmt;
-use std::ops::{Add, AddAssign};
+use std::ops::{Add, AddAssign, Mul};
 
 use crate::opcode::OpCode;
 
@@ -15,6 +15,13 @@ impl Add for Hex {
 
     fn add(self, rhs: Self) -> Self::Output {
         Hex(self.0 + rhs.0)
+    }
+}
+impl Mul for Hex {
+    type Output = Hex;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Hex(self.0 * rhs.0)
     }
 }
 
@@ -64,14 +71,21 @@ impl fmt::Display for Hex {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct ParsedInstruction {
     pub instruction: Instruction,
-    pub label: String,
-
     pub used_arg: Option<Hex>,
 }
 
 impl std::fmt::Debug for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{:<10?}\t args: {:?}", self.opcode, self.args)
+    }
+}
+
+impl ParsedInstruction {
+    pub fn new(instruction: Instruction, stack: Vec<Hex>) -> ParsedInstruction {
+        ParsedInstruction {
+            instruction,
+            used_arg: None,
+        }
     }
 }
 
@@ -105,7 +119,6 @@ pub struct InstructionSet {
     pub end: Hex,
 
     pub jumps: Vec<JumpInstruction>,
-    pub jump_origins: Vec<JumpInstruction>,
 
     pub stack: Vec<Hex>,
 }
@@ -115,10 +128,9 @@ impl std::fmt::Debug for InstructionSet {
         for instruction in &self.instructions {
             writeln!(
                 f,
-                "{:04x}\t{:?}\t{:<10}\t{:?}\t{:?}",
+                "{:04x}\t{:?}\t{:?}\t{:?}",
                 instruction.instruction.index,
                 instruction.instruction.opcode,
-                instruction.label,
                 instruction.used_arg,
                 instruction.instruction.args,
             )
@@ -126,8 +138,8 @@ impl std::fmt::Debug for InstructionSet {
         }
         writeln!(
             f,
-            "start: {}, end: {}, jumps: {:?}, jump_origins: {:?}, stack: {:?}",
-            self.start, self.end, self.jumps, self.jump_origins, self.stack
+            "start: {}, end: {}, jumps: {:?}, stack: {:?}",
+            self.start, self.end, self.jumps, self.stack
         )
         .unwrap();
         Ok(())

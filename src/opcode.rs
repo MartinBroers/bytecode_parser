@@ -1,11 +1,23 @@
 use core::fmt;
-use std::{collections::HashMap, io::Error};
+use num_derive::{FromPrimitive, ToPrimitive};
+use num_traits::ToPrimitive;
+use std::{collections::HashMap, fmt::LowerHex, io::Error};
 
-use crate::instruction::{Hex, Instruction, ParsedInstruction};
+use crate::instruction::{Hex, Instruction, JumpInstruction, JumpType, ParsedInstruction};
+
+pub enum OpCodeResult {
+    JumpInstruction(JumpInstruction),
+    End,
+    Ok,
+}
+
+trait Parse {
+    fn parse(stack: Vec<Hex>, instruction_pointer: usize) -> (Vec<Hex>, usize);
+}
 
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct OpCode {
-    pub code: u32,
+    pub code: OpCodes,
     pub input_arguments: u32,
 
     // SWAP1 is 1, SWAP5 is 5 etc
@@ -15,7 +27,7 @@ pub struct OpCode {
     pub stack_outputs: u32,
     pub short_name: String,
     //pub parse: fn(
-    //    bytecode: &HashMap<Hex, Instruction>,
+    //    bytecode: OpCodes:: &HashMap<Hex, Instruction>,
     //    instruction: &Instruction,
     //    pc: &mut Hex,
     //    stack: &mut Vec<Hex>,
@@ -29,43 +41,251 @@ impl fmt::Debug for OpCode {
     }
 }
 
-fn default_opcode_parse(
-    _bytecode: &HashMap<Hex, Instruction>,
-    _pc: &mut Hex,
-    _stack: &mut Vec<Hex>,
-    _memory: &mut Vec<Hex>,
-) -> Result<(), Error> {
-    Ok(())
+impl Instruction {
+    fn stop(&self, _stack: &mut Vec<Hex>) -> Result<OpCodeResult, ()> {
+        Ok(OpCodeResult::End)
+    }
+    fn pop(&self, stack: &mut Vec<Hex>) -> Result<OpCodeResult, ()> {
+        stack.pop();
+        Ok(OpCodeResult::Ok)
+    }
+    fn add(&self, stack: &mut Vec<Hex>) -> Result<OpCodeResult, ()> {
+        let left = stack.pop().ok_or(())?;
+        let right = stack.pop().ok_or(())?;
+        stack.push(left + right);
+        Ok(OpCodeResult::Ok)
+    }
+    fn mul(&self, stack: &mut Vec<Hex>) -> Result<OpCodeResult, ()> {
+        let left = stack.pop().ok_or(())?;
+        let right = stack.pop().ok_or(())?;
+        stack.push(left * right);
+        Ok(OpCodeResult::Ok)
+    }
+    fn swapx(&self, num_swap: u32, stack: &mut Vec<Hex>) -> Result<OpCodeResult, ()> {
+        let mut swaps = Vec::new();
+        for _ in 0..=num_swap {
+            swaps.push(match stack.pop() {
+                Some(v) => v,
+                None => return Err(()),
+            });
+        }
+        swaps.reverse();
+        for _ in 0..=num_swap {
+            stack.push(swaps.pop().unwrap());
+        }
+        Ok(OpCodeResult::Ok)
+    }
+    fn pushx(
+        &self,
+        num_push: usize,
+        stack: &mut Vec<Hex>,
+        pc: &mut Hex,
+        input_arguments: &Vec<Hex>,
+    ) -> Result<OpCodeResult, ()> {
+        *pc += Hex(num_push.try_into().unwrap());
+        assert!(input_arguments.len() == num_push);
+        stack.extend(input_arguments);
+        Ok(OpCodeResult::Ok)
+    }
+    fn jumpdest(&self) -> Result<OpCodeResult, ()> {
+        Ok(OpCodeResult::Ok)
+    }
+    fn jump(&self, stack: &mut Vec<Hex>) -> Result<OpCodeResult, ()> {
+        let jump_instruction = JumpInstruction {
+            instruction: self.clone(),
+            jump_type: JumpType::Unconditional,
+            target: stack.pop(),
+            source: self.index,
+        };
+
+        Ok(OpCodeResult::JumpInstruction(jump_instruction))
+    }
+
+    // Parses the opcode and returns the stack
+    pub fn parse(
+        &self,
+        stack: &mut Vec<Hex>,
+        pc: &mut Hex,
+        input_arguments: &Vec<Hex>,
+    ) -> Result<OpCodeResult, ()> {
+        println!("Instruction::parse pc: {}", pc);
+        match self.opcode.code {
+            OpCodes::STOP => self.stop(stack),
+            OpCodes::ADD => self.add(stack),
+            OpCodes::MUL => self.mul(stack),
+            OpCodes::SUB => todo!(),
+            OpCodes::DIV => todo!(),
+            OpCodes::SDIV => todo!(),
+            OpCodes::MOD => todo!(),
+            OpCodes::SMOD => todo!(),
+            OpCodes::ADDMOD => todo!(),
+            OpCodes::MULMOD => todo!(),
+            OpCodes::EXP => todo!(),
+            OpCodes::SIGNEXTEND => todo!(),
+            OpCodes::LT => todo!(),
+            OpCodes::GT => todo!(),
+            OpCodes::SLT => todo!(),
+            OpCodes::SGT => todo!(),
+            OpCodes::EQ => todo!(),
+            OpCodes::ISZERO => todo!(),
+            OpCodes::AND => todo!(),
+            OpCodes::OR => todo!(),
+            OpCodes::XOR => todo!(),
+            OpCodes::NOT => todo!(),
+            OpCodes::BYTE => todo!(),
+            OpCodes::CALLDATALOAD => todo!(),
+            OpCodes::CALLDATASIZE => todo!(),
+            OpCodes::CALLDATACOPY => todo!(),
+            OpCodes::CODESIZE => todo!(),
+            OpCodes::CODECOPY => todo!(),
+            OpCodes::SHL => todo!(),
+            OpCodes::SHR => todo!(),
+            OpCodes::SAR => todo!(),
+            OpCodes::POP => self.pop(stack),
+            OpCodes::MLOAD => todo!(),
+            OpCodes::MSTORE => todo!(),
+            OpCodes::MSTORE8 => todo!(),
+            OpCodes::JUMP => self.jump(stack),
+            OpCodes::JUMPI => todo!(),
+            OpCodes::PC => todo!(),
+            OpCodes::MSIZE => todo!(),
+            OpCodes::JUMPDEST => self.jumpdest(),
+            OpCodes::PUSH0 => todo!(),
+            OpCodes::PUSH1 => self.pushx(1, stack, pc, input_arguments),
+            OpCodes::PUSH2 => todo!(),
+            OpCodes::PUSH3 => todo!(),
+            OpCodes::PUSH4 => todo!(),
+            OpCodes::PUSH5 => todo!(),
+            OpCodes::PUSH6 => todo!(),
+            OpCodes::PUSH7 => todo!(),
+            OpCodes::PUSH8 => todo!(),
+            OpCodes::PUSH9 => todo!(),
+            OpCodes::PUSH10 => todo!(),
+            OpCodes::PUSH11 => todo!(),
+            OpCodes::PUSH12 => todo!(),
+            OpCodes::PUSH13 => todo!(),
+            OpCodes::PUSH14 => todo!(),
+            OpCodes::PUSH15 => todo!(),
+            OpCodes::PUSH16 => todo!(),
+            OpCodes::PUSH17 => todo!(),
+            OpCodes::PUSH18 => todo!(),
+            OpCodes::PUSH19 => todo!(),
+            OpCodes::PUSH20 => todo!(),
+            OpCodes::PUSH21 => todo!(),
+            OpCodes::PUSH22 => todo!(),
+            OpCodes::PUSH23 => todo!(),
+            OpCodes::PUSH24 => todo!(),
+            OpCodes::PUSH25 => todo!(),
+            OpCodes::PUSH26 => todo!(),
+            OpCodes::PUSH27 => todo!(),
+            OpCodes::PUSH28 => todo!(),
+            OpCodes::PUSH29 => todo!(),
+            OpCodes::PUSH30 => todo!(),
+            OpCodes::PUSH31 => todo!(),
+            OpCodes::PUSH32 => todo!(),
+            OpCodes::DUP1 => todo!(),
+            OpCodes::DUP2 => todo!(),
+            OpCodes::DUP3 => todo!(),
+            OpCodes::DUP4 => todo!(),
+            OpCodes::DUP5 => todo!(),
+            OpCodes::DUP6 => todo!(),
+            OpCodes::DUP7 => todo!(),
+            OpCodes::DUP8 => todo!(),
+            OpCodes::DUP9 => todo!(),
+            OpCodes::DUP10 => todo!(),
+            OpCodes::DUP11 => todo!(),
+            OpCodes::DUP12 => todo!(),
+            OpCodes::DUP13 => todo!(),
+            OpCodes::DUP14 => todo!(),
+            OpCodes::DUP15 => todo!(),
+            OpCodes::DUP16 => todo!(),
+            OpCodes::SWAP1 => self.swapx(1, stack),
+            OpCodes::SWAP2 => todo!(),
+            OpCodes::SWAP3 => todo!(),
+            OpCodes::SWAP4 => todo!(),
+            OpCodes::SWAP5 => todo!(),
+            OpCodes::SWAP6 => todo!(),
+            OpCodes::SWAP7 => todo!(),
+            OpCodes::SWAP8 => todo!(),
+            OpCodes::SWAP9 => todo!(),
+            OpCodes::SWAP10 => todo!(),
+            OpCodes::SWAP11 => todo!(),
+            OpCodes::SWAP12 => todo!(),
+            OpCodes::SWAP13 => todo!(),
+            OpCodes::SWAP14 => todo!(),
+            OpCodes::SWAP15 => todo!(),
+            OpCodes::SWAP16 => todo!(),
+            OpCodes::RETURN => todo!(),
+            OpCodes::REVERT => todo!(),
+            OpCodes::INVALID => todo!(),
+            OpCodes::EOFMAGIC => todo!(),
+            OpCodes::SHA3 => todo!(),
+            OpCodes::ADDRESS => todo!(),
+            OpCodes::BALANCE => todo!(),
+            OpCodes::SELFBALANCE => todo!(),
+            OpCodes::BASEFEE => todo!(),
+            OpCodes::ORIGIN => todo!(),
+            OpCodes::CALLER => todo!(),
+            OpCodes::CALLVALUE => todo!(),
+            OpCodes::GASPRICE => todo!(),
+            OpCodes::EXTCODESIZE => todo!(),
+            OpCodes::EXTCODECOPY => todo!(),
+            OpCodes::EXTCODEHASH => todo!(),
+            OpCodes::RETURNDATASIZE => todo!(),
+            OpCodes::RETURNDATACOPY => todo!(),
+            OpCodes::BLOCKHASH => todo!(),
+            OpCodes::COINBASE => todo!(),
+            OpCodes::TIMESTAMP => todo!(),
+            OpCodes::NUMBER => todo!(),
+            OpCodes::DIFFICULTY => todo!(),
+            OpCodes::GASLIMIT => todo!(),
+            OpCodes::SLOAD => todo!(),
+            OpCodes::SSTORE => todo!(),
+            OpCodes::GAS => todo!(),
+            OpCodes::LOG0 => todo!(),
+            OpCodes::LOG1 => todo!(),
+            OpCodes::LOG2 => todo!(),
+            OpCodes::LOG3 => todo!(),
+            OpCodes::LOG4 => todo!(),
+            OpCodes::CREATE => todo!(),
+            OpCodes::CALL => todo!(),
+            OpCodes::CALLCODE => todo!(),
+            OpCodes::DELEGATECALL => todo!(),
+            OpCodes::CREATE2 => todo!(),
+            OpCodes::STATICCALL => todo!(),
+            OpCodes::SELFDESTRUCT => todo!(),
+            OpCodes::CHAINID => todo!(),
+        }
+    }
 }
 
 impl Default for OpCode {
     fn default() -> Self {
         Self {
-            code: Default::default(),
+            code: OpCodes::INVALID,
             input_arguments: Default::default(),
             operator_index: Default::default(),
             stack_inputs: Default::default(),
             stack_outputs: Default::default(),
             short_name: Default::default(),
-            //parse: default_opcode_parse,
         }
     }
 }
 
-pub fn opcodes() -> HashMap<u32, OpCode> {
+pub fn opcodes() -> HashMap<OpCodes, OpCode> {
     let mut map = HashMap::new();
     map.insert(
-        STOP,
+        OpCodes::STOP,
         OpCode {
-            code: STOP,
+            code: OpCodes::STOP,
             short_name: "STOP".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        ADD,
+        OpCodes::ADD,
         OpCode {
-            code: ADD,
+            code: OpCodes::ADD,
             short_name: "ADD".to_string(),
             stack_inputs: 2,
             stack_outputs: 1,
@@ -73,1186 +293,1186 @@ pub fn opcodes() -> HashMap<u32, OpCode> {
         },
     );
     map.insert(
-        MUL,
+        OpCodes::MUL,
         OpCode {
-            code: MUL,
+            code: OpCodes::MUL,
             short_name: "MUL".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        SUB,
+        OpCodes::SUB,
         OpCode {
-            code: SUB,
+            code: OpCodes::SUB,
             short_name: "SUB".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DIV,
+        OpCodes::DIV,
         OpCode {
-            code: DIV,
+            code: OpCodes::DIV,
             short_name: "DIV".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        SDIV,
+        OpCodes::SDIV,
         OpCode {
-            code: SDIV,
+            code: OpCodes::SDIV,
             short_name: "SDIV".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        MOD,
+        OpCodes::MOD,
         OpCode {
-            code: MOD,
+            code: OpCodes::MOD,
             short_name: "MOD".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        SMOD,
+        OpCodes::SMOD,
         OpCode {
-            code: SMOD,
+            code: OpCodes::SMOD,
             short_name: "SMOD".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        ADDMOD,
+        OpCodes::ADDMOD,
         OpCode {
-            code: ADDMOD,
+            code: OpCodes::ADDMOD,
             short_name: "ADDMOD".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        MULMOD,
+        OpCodes::MULMOD,
         OpCode {
-            code: MULMOD,
+            code: OpCodes::MULMOD,
             short_name: "MULMOD".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        EXP,
+        OpCodes::EXP,
         OpCode {
-            code: EXP,
+            code: OpCodes::EXP,
             short_name: "EXP".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        SIGNEXTEND,
+        OpCodes::SIGNEXTEND,
         OpCode {
-            code: SIGNEXTEND,
+            code: OpCodes::SIGNEXTEND,
             short_name: "SIGNEXTEND".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        LT,
+        OpCodes::LT,
         OpCode {
-            code: LT,
+            code: OpCodes::LT,
             short_name: "LT".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        GT,
+        OpCodes::GT,
         OpCode {
-            code: GT,
+            code: OpCodes::GT,
             short_name: "GT".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        SLT,
+        OpCodes::SLT,
         OpCode {
-            code: SLT,
+            code: OpCodes::SLT,
             short_name: "SLT".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        SGT,
+        OpCodes::SGT,
         OpCode {
-            code: SGT,
+            code: OpCodes::SGT,
             short_name: "SGT".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        EQ,
+        OpCodes::EQ,
         OpCode {
-            code: EQ,
+            code: OpCodes::EQ,
             short_name: "EQ".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        ISZERO,
+        OpCodes::ISZERO,
         OpCode {
-            code: ISZERO,
+            code: OpCodes::ISZERO,
             short_name: "ISZERO".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        AND,
+        OpCodes::AND,
         OpCode {
-            code: AND,
+            code: OpCodes::AND,
             short_name: "AND".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        OR,
+        OpCodes::OR,
         OpCode {
-            code: OR,
+            code: OpCodes::OR,
             short_name: "OR".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        XOR,
+        OpCodes::XOR,
         OpCode {
-            code: XOR,
+            code: OpCodes::XOR,
             short_name: "XOR".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        NOT,
+        OpCodes::NOT,
         OpCode {
-            code: NOT,
+            code: OpCodes::NOT,
             short_name: "NOT".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        BYTE,
+        OpCodes::BYTE,
         OpCode {
-            code: BYTE,
+            code: OpCodes::BYTE,
             short_name: "BYTE".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        SHL,
+        OpCodes::SHL,
         OpCode {
-            code: SHL,
+            code: OpCodes::SHL,
             short_name: "SHL".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        SHR,
+        OpCodes::SHR,
         OpCode {
-            code: SHR,
+            code: OpCodes::SHR,
             short_name: "SHR".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        SAR,
+        OpCodes::SAR,
         OpCode {
-            code: SAR,
+            code: OpCodes::SAR,
             short_name: "SAR".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        SHA3,
+        OpCodes::SHA3,
         OpCode {
-            code: 0x22,
+            code: OpCodes::SHA3,
             short_name: "SHA3".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        ADDRESS,
+        OpCodes::ADDRESS,
         OpCode {
-            code: ADDRESS,
+            code: OpCodes::ADDRESS,
             short_name: "ADDRESS".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        BALANCE,
+        OpCodes::BALANCE,
         OpCode {
-            code: BALANCE,
+            code: OpCodes::BALANCE,
             short_name: "BALANCE".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        ORIGIN,
+        OpCodes::ORIGIN,
         OpCode {
-            code: ORIGIN,
+            code: OpCodes::ORIGIN,
             short_name: "ORIGIN".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        CALLER,
+        OpCodes::CALLER,
         OpCode {
-            code: CALLER,
+            code: OpCodes::CALLER,
             short_name: "CALLER".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        CALLVALUE,
+        OpCodes::CALLVALUE,
         OpCode {
-            code: CALLVALUE,
+            code: OpCodes::CALLVALUE,
             short_name: "CALLVALUE".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        CALLDATALOAD,
+        OpCodes::CALLDATALOAD,
         OpCode {
-            code: CALLDATALOAD,
+            code: OpCodes::CALLDATALOAD,
             short_name: "CALLDATALOAD".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        CALLDATASIZE,
+        OpCodes::CALLDATASIZE,
         OpCode {
-            code: CALLDATASIZE,
+            code: OpCodes::CALLDATASIZE,
             short_name: "CALLDATASIZE".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        CALLDATACOPY,
+        OpCodes::CALLDATACOPY,
         OpCode {
-            code: CALLDATACOPY,
+            code: OpCodes::CALLDATACOPY,
             short_name: "CALLDATACOPY".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        CODESIZE,
+        OpCodes::CODESIZE,
         OpCode {
-            code: CODESIZE,
+            code: OpCodes::CODESIZE,
             short_name: "CODESIZE".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        CODECOPY,
+        OpCodes::CODECOPY,
         OpCode {
-            code: CODECOPY,
+            code: OpCodes::CODECOPY,
             short_name: "CODECOPY".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        GASPRICE,
+        OpCodes::GASPRICE,
         OpCode {
-            code: GASPRICE,
+            code: OpCodes::GASPRICE,
             short_name: "GASPRICE".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        EXTCODESIZE,
+        OpCodes::EXTCODESIZE,
         OpCode {
-            code: EXTCODESIZE,
+            code: OpCodes::EXTCODESIZE,
             short_name: "EXTCODESIZE".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        EXTCODECOPY,
+        OpCodes::EXTCODECOPY,
         OpCode {
-            code: EXTCODECOPY,
+            code: OpCodes::EXTCODECOPY,
             short_name: "EXTCODECOPY".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        RETURNDATASIZE,
+        OpCodes::RETURNDATASIZE,
         OpCode {
-            code: RETURNDATASIZE,
+            code: OpCodes::RETURNDATASIZE,
             short_name: "RETURNDATASIZE".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        RETURNDATACOPY,
+        OpCodes::RETURNDATACOPY,
         OpCode {
-            code: RETURNDATACOPY,
+            code: OpCodes::RETURNDATACOPY,
             short_name: "RETURNDATACOPY".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        EXTCODEHASH,
+        OpCodes::EXTCODEHASH,
         OpCode {
-            code: EXTCODEHASH,
+            code: OpCodes::EXTCODEHASH,
             short_name: "EXTCODEHASH".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        BLOCKHASH,
+        OpCodes::BLOCKHASH,
         OpCode {
-            code: BLOCKHASH,
+            code: OpCodes::BLOCKHASH,
             short_name: "BLOCKHASH".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        COINBASE,
+        OpCodes::COINBASE,
         OpCode {
-            code: COINBASE,
+            code: OpCodes::COINBASE,
             short_name: "COINBASE".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        TIMESTAMP,
+        OpCodes::TIMESTAMP,
         OpCode {
-            code: TIMESTAMP,
+            code: OpCodes::TIMESTAMP,
             short_name: "TIMESTAMP".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        NUMBER,
+        OpCodes::NUMBER,
         OpCode {
-            code: NUMBER,
+            code: OpCodes::NUMBER,
             short_name: "NUMBER".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DIFFICULTY,
+        OpCodes::DIFFICULTY,
         OpCode {
-            code: DIFFICULTY,
+            code: OpCodes::DIFFICULTY,
             short_name: "DIFFICULTY".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        GASLIMIT,
+        OpCodes::GASLIMIT,
         OpCode {
-            code: GASLIMIT,
+            code: OpCodes::GASLIMIT,
             short_name: "GASLIMIT".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        CHAINID,
+        OpCodes::CHAINID,
         OpCode {
-            code: CHAINID,
+            code: OpCodes::CHAINID,
             short_name: "CHAINID".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        SELFBALANCE,
+        OpCodes::SELFBALANCE,
         OpCode {
-            code: SELFBALANCE,
+            code: OpCodes::SELFBALANCE,
             short_name: "SELFBALANCE".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        BASEFEE,
+        OpCodes::BASEFEE,
         OpCode {
-            code: BASEFEE,
+            code: OpCodes::BASEFEE,
             short_name: "BASEFEE".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        POP,
+        OpCodes::POP,
         OpCode {
-            code: POP,
+            code: OpCodes::POP,
             short_name: "POP".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        MLOAD,
+        OpCodes::MLOAD,
         OpCode {
-            code: MLOAD,
+            code: OpCodes::MLOAD,
             short_name: "MLOAD".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        MSTORE,
+        OpCodes::MSTORE,
         OpCode {
-            code: MSTORE,
+            code: OpCodes::MSTORE,
             short_name: "MSTORE".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        MSTORE8,
+        OpCodes::MSTORE8,
         OpCode {
-            code: MSTORE8,
+            code: OpCodes::MSTORE8,
             short_name: "MSTORE8".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        SLOAD,
+        OpCodes::SLOAD,
         OpCode {
-            code: SLOAD,
+            code: OpCodes::SLOAD,
             short_name: "SLOAD".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        SSTORE,
+        OpCodes::SSTORE,
         OpCode {
-            code: SSTORE,
+            code: OpCodes::SSTORE,
             short_name: "SSTORE".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        JUMP,
+        OpCodes::JUMP,
         OpCode {
-            code: JUMP,
+            code: OpCodes::JUMP,
             short_name: "JUMP".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        JUMPI,
+        OpCodes::JUMPI,
         OpCode {
-            code: JUMPI,
+            code: OpCodes::JUMPI,
             short_name: "JUMPI".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        PC,
+        OpCodes::PC,
         OpCode {
-            code: PC,
+            code: OpCodes::PC,
             short_name: "PC".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        MSIZE,
+        OpCodes::MSIZE,
         OpCode {
-            code: MSIZE,
+            code: OpCodes::MSIZE,
             short_name: "MSIZE".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        GAS,
+        OpCodes::GAS,
         OpCode {
-            code: GAS,
+            code: OpCodes::GAS,
             short_name: "GAS".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        JUMPDEST,
+        OpCodes::JUMPDEST,
         OpCode {
-            code: JUMPDEST,
+            code: OpCodes::JUMPDEST,
             short_name: "JUMPDEST".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        PUSH1,
+        OpCodes::PUSH1,
         OpCode {
-            code: PUSH1,
+            code: OpCodes::PUSH1,
             short_name: "PUSH1".to_string(),
             input_arguments: 1,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH2,
+        OpCodes::PUSH2,
         OpCode {
-            code: PUSH2,
+            code: OpCodes::PUSH2,
             short_name: "PUSH2".to_string(),
             input_arguments: 2,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH3,
+        OpCodes::PUSH3,
         OpCode {
-            code: PUSH3,
+            code: OpCodes::PUSH3,
             short_name: "PUSH3".to_string(),
             input_arguments: 3,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH4,
+        OpCodes::PUSH4,
         OpCode {
-            code: PUSH4,
+            code: OpCodes::PUSH4,
             short_name: "PUSH4".to_string(),
             input_arguments: 4,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH5,
+        OpCodes::PUSH5,
         OpCode {
-            code: PUSH5,
+            code: OpCodes::PUSH5,
             short_name: "PUSH5".to_string(),
             input_arguments: 5,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH6,
+        OpCodes::PUSH6,
         OpCode {
-            code: PUSH6,
+            code: OpCodes::PUSH6,
             short_name: "PUSH6".to_string(),
             input_arguments: 6,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH7,
+        OpCodes::PUSH7,
         OpCode {
-            code: PUSH7,
+            code: OpCodes::PUSH7,
             short_name: "PUSH7".to_string(),
             input_arguments: 7,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH8,
+        OpCodes::PUSH8,
         OpCode {
-            code: PUSH8,
+            code: OpCodes::PUSH8,
             short_name: "PUSH8".to_string(),
             input_arguments: 8,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH9,
+        OpCodes::PUSH9,
         OpCode {
-            code: PUSH9,
+            code: OpCodes::PUSH9,
             short_name: "PUSH9".to_string(),
             input_arguments: 9,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH10,
+        OpCodes::PUSH10,
         OpCode {
-            code: PUSH10,
+            code: OpCodes::PUSH10,
             short_name: "PUSH10".to_string(),
             input_arguments: 10,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH11,
+        OpCodes::PUSH11,
         OpCode {
-            code: PUSH11,
+            code: OpCodes::PUSH11,
             short_name: "PUSH11".to_string(),
             input_arguments: 11,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH12,
+        OpCodes::PUSH12,
         OpCode {
-            code: PUSH12,
+            code: OpCodes::PUSH12,
             short_name: "PUSH12".to_string(),
             input_arguments: 12,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH13,
+        OpCodes::PUSH13,
         OpCode {
-            code: PUSH13,
+            code: OpCodes::PUSH13,
             short_name: "PUSH13".to_string(),
             input_arguments: 13,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH14,
+        OpCodes::PUSH14,
         OpCode {
-            code: PUSH14,
+            code: OpCodes::PUSH14,
             short_name: "PUSH14".to_string(),
             input_arguments: 14,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH15,
+        OpCodes::PUSH15,
         OpCode {
-            code: PUSH15,
+            code: OpCodes::PUSH15,
             short_name: "PUSH15".to_string(),
             input_arguments: 15,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH16,
+        OpCodes::PUSH16,
         OpCode {
-            code: PUSH16,
+            code: OpCodes::PUSH16,
             short_name: "PUSH16".to_string(),
             input_arguments: 16,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH17,
+        OpCodes::PUSH17,
         OpCode {
-            code: PUSH17,
+            code: OpCodes::PUSH17,
             short_name: "PUSH17".to_string(),
             input_arguments: 17,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH18,
+        OpCodes::PUSH18,
         OpCode {
-            code: PUSH18,
+            code: OpCodes::PUSH18,
             short_name: "PUSH18".to_string(),
             input_arguments: 18,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH19,
+        OpCodes::PUSH19,
         OpCode {
-            code: PUSH19,
+            code: OpCodes::PUSH19,
             short_name: "PUSH19".to_string(),
             input_arguments: 19,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH20,
+        OpCodes::PUSH20,
         OpCode {
-            code: PUSH20,
+            code: OpCodes::PUSH20,
             short_name: "PUSH20".to_string(),
             input_arguments: 20,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH21,
+        OpCodes::PUSH21,
         OpCode {
-            code: PUSH21,
+            code: OpCodes::PUSH21,
             short_name: "PUSH21".to_string(),
             input_arguments: 21,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH22,
+        OpCodes::PUSH22,
         OpCode {
-            code: PUSH22,
+            code: OpCodes::PUSH22,
             short_name: "PUSH22".to_string(),
             input_arguments: 22,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH23,
+        OpCodes::PUSH23,
         OpCode {
-            code: PUSH23,
+            code: OpCodes::PUSH23,
             short_name: "PUSH23".to_string(),
             input_arguments: 23,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH24,
+        OpCodes::PUSH24,
         OpCode {
-            code: PUSH24,
+            code: OpCodes::PUSH24,
             short_name: "PUSH24".to_string(),
             input_arguments: 24,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH25,
+        OpCodes::PUSH25,
         OpCode {
-            code: PUSH25,
+            code: OpCodes::PUSH25,
             short_name: "PUSH25".to_string(),
             input_arguments: 25,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH26,
+        OpCodes::PUSH26,
         OpCode {
-            code: PUSH26,
+            code: OpCodes::PUSH26,
             short_name: "PUSH26".to_string(),
             input_arguments: 26,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH27,
+        OpCodes::PUSH27,
         OpCode {
-            code: PUSH27,
+            code: OpCodes::PUSH27,
             short_name: "PUSH27".to_string(),
             input_arguments: 27,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH28,
+        OpCodes::PUSH28,
         OpCode {
-            code: PUSH28,
+            code: OpCodes::PUSH28,
             short_name: "PUSH28".to_string(),
             input_arguments: 28,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH29,
+        OpCodes::PUSH29,
         OpCode {
-            code: PUSH29,
+            code: OpCodes::PUSH29,
             short_name: "PUSH29".to_string(),
             input_arguments: 29,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH30,
+        OpCodes::PUSH30,
         OpCode {
-            code: PUSH30,
+            code: OpCodes::PUSH30,
             short_name: "PUSH30".to_string(),
             input_arguments: 30,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH31,
+        OpCodes::PUSH31,
         OpCode {
-            code: PUSH31,
+            code: OpCodes::PUSH31,
             short_name: "PUSH31".to_string(),
             input_arguments: 31,
             ..Default::default()
         },
     );
     map.insert(
-        PUSH32,
+        OpCodes::PUSH32,
         OpCode {
-            code: PUSH32,
+            code: OpCodes::PUSH32,
             short_name: "PUSH32".to_string(),
             input_arguments: 32,
             ..Default::default()
         },
     );
     map.insert(
-        DUP1,
+        OpCodes::DUP1,
         OpCode {
-            code: DUP1,
+            code: OpCodes::DUP1,
             short_name: "DUP1".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DUP2,
+        OpCodes::DUP2,
         OpCode {
-            code: DUP2,
+            code: OpCodes::DUP2,
             short_name: "DUP2".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DUP3,
+        OpCodes::DUP3,
         OpCode {
-            code: DUP3,
+            code: OpCodes::DUP3,
             short_name: "DUP3".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DUP4,
+        OpCodes::DUP4,
         OpCode {
-            code: DUP4,
+            code: OpCodes::DUP4,
             short_name: "DUP4".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DUP5,
+        OpCodes::DUP5,
         OpCode {
-            code: DUP5,
+            code: OpCodes::DUP5,
             short_name: "DUP5".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DUP6,
+        OpCodes::DUP6,
         OpCode {
-            code: DUP6,
+            code: OpCodes::DUP6,
             short_name: "DUP6".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DUP7,
+        OpCodes::DUP7,
         OpCode {
-            code: DUP7,
+            code: OpCodes::DUP7,
             short_name: "DUP7".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DUP8,
+        OpCodes::DUP8,
         OpCode {
-            code: DUP8,
+            code: OpCodes::DUP8,
             short_name: "DUP8".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DUP9,
+        OpCodes::DUP9,
         OpCode {
-            code: DUP9,
+            code: OpCodes::DUP9,
             short_name: "DUP9".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DUP10,
+        OpCodes::DUP10,
         OpCode {
-            code: DUP10,
+            code: OpCodes::DUP10,
             short_name: "DUP10".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DUP11,
+        OpCodes::DUP11,
         OpCode {
-            code: DUP11,
+            code: OpCodes::DUP11,
             short_name: "DUP11".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DUP12,
+        OpCodes::DUP12,
         OpCode {
-            code: DUP12,
+            code: OpCodes::DUP12,
             short_name: "DUP12".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DUP13,
+        OpCodes::DUP13,
         OpCode {
-            code: DUP13,
+            code: OpCodes::DUP13,
             short_name: "DUP13".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DUP14,
+        OpCodes::DUP14,
         OpCode {
-            code: DUP14,
+            code: OpCodes::DUP14,
             short_name: "DUP14".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DUP15,
+        OpCodes::DUP15,
         OpCode {
-            code: DUP15,
+            code: OpCodes::DUP15,
             short_name: "DUP15".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DUP16,
+        OpCodes::DUP16,
         OpCode {
-            code: DUP16,
+            code: OpCodes::DUP16,
             short_name: "DUP16".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        SWAP1,
+        OpCodes::SWAP1,
         OpCode {
-            code: SWAP1,
+            code: OpCodes::SWAP1,
             short_name: "SWAP1".to_string(),
             operator_index: 1,
             ..Default::default()
         },
     );
     map.insert(
-        SWAP2,
+        OpCodes::SWAP2,
         OpCode {
-            code: SWAP2,
+            code: OpCodes::SWAP2,
             short_name: "SWAP2".to_string(),
             operator_index: 2,
             ..Default::default()
         },
     );
     map.insert(
-        SWAP3,
+        OpCodes::SWAP3,
         OpCode {
-            code: SWAP3,
+            code: OpCodes::SWAP3,
             short_name: "SWAP3".to_string(),
             operator_index: 3,
             ..Default::default()
         },
     );
     map.insert(
-        SWAP4,
+        OpCodes::SWAP4,
         OpCode {
-            code: SWAP4,
+            code: OpCodes::SWAP4,
             short_name: "SWAP4".to_string(),
             operator_index: 4,
             ..Default::default()
         },
     );
     map.insert(
-        SWAP5,
+        OpCodes::SWAP5,
         OpCode {
-            code: SWAP5,
+            code: OpCodes::SWAP5,
             short_name: "SWAP5".to_string(),
             operator_index: 5,
             ..Default::default()
         },
     );
     map.insert(
-        SWAP6,
+        OpCodes::SWAP6,
         OpCode {
-            code: SWAP6,
+            code: OpCodes::SWAP6,
             short_name: "SWAP6".to_string(),
             operator_index: 6,
             ..Default::default()
         },
     );
     map.insert(
-        SWAP7,
+        OpCodes::SWAP7,
         OpCode {
-            code: SWAP7,
+            code: OpCodes::SWAP7,
             short_name: "SWAP7".to_string(),
             operator_index: 7,
             ..Default::default()
         },
     );
     map.insert(
-        SWAP8,
+        OpCodes::SWAP8,
         OpCode {
-            code: SWAP8,
+            code: OpCodes::SWAP8,
             short_name: "SWAP8".to_string(),
             operator_index: 8,
             ..Default::default()
         },
     );
     map.insert(
-        SWAP9,
+        OpCodes::SWAP9,
         OpCode {
-            code: SWAP9,
+            code: OpCodes::SWAP9,
             short_name: "SWAP9".to_string(),
             operator_index: 9,
             ..Default::default()
         },
     );
     map.insert(
-        SWAP10,
+        OpCodes::SWAP10,
         OpCode {
-            code: SWAP10,
+            code: OpCodes::SWAP10,
             short_name: "SWAP10".to_string(),
             operator_index: 10,
             ..Default::default()
         },
     );
     map.insert(
-        SWAP11,
+        OpCodes::SWAP11,
         OpCode {
-            code: SWAP11,
+            code: OpCodes::SWAP11,
             short_name: "SWAP11".to_string(),
             operator_index: 11,
             ..Default::default()
         },
     );
     map.insert(
-        SWAP12,
+        OpCodes::SWAP12,
         OpCode {
-            code: SWAP12,
+            code: OpCodes::SWAP12,
             short_name: "SWAP12".to_string(),
             operator_index: 12,
             ..Default::default()
         },
     );
     map.insert(
-        SWAP13,
+        OpCodes::SWAP13,
         OpCode {
-            code: SWAP13,
+            code: OpCodes::SWAP13,
             short_name: "SWAP13".to_string(),
             operator_index: 13,
             ..Default::default()
         },
     );
     map.insert(
-        SWAP14,
+        OpCodes::SWAP14,
         OpCode {
-            code: SWAP14,
+            code: OpCodes::SWAP14,
             short_name: "SWAP14".to_string(),
             operator_index: 14,
             ..Default::default()
         },
     );
     map.insert(
-        SWAP15,
+        OpCodes::SWAP15,
         OpCode {
-            code: SWAP15,
+            code: OpCodes::SWAP15,
             short_name: "SWAP15".to_string(),
             operator_index: 15,
             ..Default::default()
         },
     );
     map.insert(
-        SWAP16,
+        OpCodes::SWAP16,
         OpCode {
-            code: SWAP16,
+            code: OpCodes::SWAP16,
             short_name: "SWAP16".to_string(),
             operator_index: 16,
             ..Default::default()
         },
     );
     map.insert(
-        LOG0,
+        OpCodes::LOG0,
         OpCode {
-            code: LOG0,
+            code: OpCodes::LOG0,
             short_name: "LOG0".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        LOG1,
+        OpCodes::LOG1,
         OpCode {
-            code: LOG1,
+            code: OpCodes::LOG1,
             short_name: "LOG1".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        LOG2,
+        OpCodes::LOG2,
         OpCode {
-            code: LOG2,
+            code: OpCodes::LOG2,
             short_name: "LOG2".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        LOG3,
+        OpCodes::LOG3,
         OpCode {
-            code: LOG3,
+            code: OpCodes::LOG3,
             short_name: "LOG3".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        LOG4,
+        OpCodes::LOG4,
         OpCode {
-            code: LOG4,
+            code: OpCodes::LOG4,
             short_name: "LOG4".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        CREATE,
+        OpCodes::CREATE,
         OpCode {
-            code: CREATE,
+            code: OpCodes::CREATE,
             short_name: "CREATE".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        CALL,
+        OpCodes::CALL,
         OpCode {
-            code: CALL,
+            code: OpCodes::CALL,
             short_name: "CALL".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        CALLCODE,
+        OpCodes::CALLCODE,
         OpCode {
-            code: CALLCODE,
+            code: OpCodes::CALLCODE,
             short_name: "CALLCODE".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        RETURN,
+        OpCodes::RETURN,
         OpCode {
-            code: RETURN,
+            code: OpCodes::RETURN,
             short_name: "RETURN".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        DELEGATECALL,
+        OpCodes::DELEGATECALL,
         OpCode {
-            code: DELEGATECALL,
+            code: OpCodes::DELEGATECALL,
             short_name: "DELEGATECALL".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        CREATE2,
+        OpCodes::CREATE2,
         OpCode {
-            code: CREATE2,
+            code: OpCodes::CREATE2,
             short_name: "CALLBLACKBOX".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        STATICCALL,
+        OpCodes::STATICCALL,
         OpCode {
-            code: STATICCALL,
+            code: OpCodes::STATICCALL,
             short_name: "STATICCALL".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        REVERT,
+        OpCodes::REVERT,
         OpCode {
-            code: REVERT,
+            code: OpCodes::REVERT,
             short_name: "REVERT".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        INVALID,
+        OpCodes::INVALID,
         OpCode {
-            code: INVALID,
+            code: OpCodes::INVALID,
             short_name: "INVALID".to_string(),
             ..Default::default()
         },
     );
     map.insert(
-        EOFMAGIC,
+        OpCodes::EOFMAGIC,
         OpCode {
-            code: EOFMAGIC,
+            code: OpCodes::EOFMAGIC,
             short_name: "EOFMAGIC".to_string(),
             ..Default::default()
         },
     );
 
     map.insert(
-        SELFDESTRUCT,
+        OpCodes::SELFDESTRUCT,
         OpCode {
-            code: SELFDESTRUCT,
+            code: OpCodes::SELFDESTRUCT,
             short_name: "SELFDESTRUCT".to_string(),
             ..Default::default()
         },
@@ -1260,148 +1480,157 @@ pub fn opcodes() -> HashMap<u32, OpCode> {
     map
 }
 
-pub(crate) const STOP: u32 = 0x00;
-pub(crate) const ADD: u32 = 0x01;
-pub(crate) const MUL: u32 = 0x02;
-pub(crate) const SUB: u32 = 0x03;
-pub(crate) const DIV: u32 = 0x04;
-pub(crate) const SDIV: u32 = 0x05;
-pub(crate) const MOD: u32 = 0x06;
-pub(crate) const SMOD: u32 = 0x07;
-pub(crate) const ADDMOD: u32 = 0x08;
-pub(crate) const MULMOD: u32 = 0x09;
-pub(crate) const EXP: u32 = 0x0a;
-pub(crate) const SIGNEXTEND: u32 = 0x0b;
-pub(crate) const LT: u32 = 0x10;
-pub(crate) const GT: u32 = 0x11;
-pub(crate) const SLT: u32 = 0x12;
-pub(crate) const SGT: u32 = 0x13;
-pub(crate) const EQ: u32 = 0x14;
-pub(crate) const ISZERO: u32 = 0x15;
-pub(crate) const AND: u32 = 0x16;
-pub(crate) const OR: u32 = 0x17;
-pub(crate) const XOR: u32 = 0x18;
-pub(crate) const NOT: u32 = 0x19;
-pub(crate) const BYTE: u32 = 0x1a;
-pub(crate) const CALLDATALOAD: u32 = 0x35;
-pub(crate) const CALLDATASIZE: u32 = 0x36;
-pub(crate) const CALLDATACOPY: u32 = 0x37;
-pub(crate) const CODESIZE: u32 = 0x38;
-pub(crate) const CODECOPY: u32 = 0x39;
-pub(crate) const SHL: u32 = 0x1b;
-pub(crate) const SHR: u32 = 0x1c;
-pub(crate) const SAR: u32 = 0x1d;
-pub(crate) const POP: u32 = 0x50;
-pub(crate) const MLOAD: u32 = 0x51;
-pub(crate) const MSTORE: u32 = 0x52;
-pub(crate) const MSTORE8: u32 = 0x53;
-pub(crate) const JUMP: u32 = 0x56;
-pub(crate) const JUMPI: u32 = 0x57;
-pub(crate) const PC: u32 = 0x58;
-pub(crate) const MSIZE: u32 = 0x59;
-pub(crate) const JUMPDEST: u32 = 0x5b;
-pub(crate) const PUSH0: u32 = 0x5f;
-pub(crate) const PUSH1: u32 = 0x60;
-pub(crate) const PUSH2: u32 = 0x61;
-pub(crate) const PUSH3: u32 = 0x62;
-pub(crate) const PUSH4: u32 = 0x63;
-pub(crate) const PUSH5: u32 = 0x64;
-pub(crate) const PUSH6: u32 = 0x65;
-pub(crate) const PUSH7: u32 = 0x66;
-pub(crate) const PUSH8: u32 = 0x67;
-pub(crate) const PUSH9: u32 = 0x68;
-pub(crate) const PUSH10: u32 = 0x69;
-pub(crate) const PUSH11: u32 = 0x6a;
-pub(crate) const PUSH12: u32 = 0x6b;
-pub(crate) const PUSH13: u32 = 0x6c;
-pub(crate) const PUSH14: u32 = 0x6d;
-pub(crate) const PUSH15: u32 = 0x6e;
-pub(crate) const PUSH16: u32 = 0x6f;
-pub(crate) const PUSH17: u32 = 0x70;
-pub(crate) const PUSH18: u32 = 0x71;
-pub(crate) const PUSH19: u32 = 0x72;
-pub(crate) const PUSH20: u32 = 0x73;
-pub(crate) const PUSH21: u32 = 0x74;
-pub(crate) const PUSH22: u32 = 0x75;
-pub(crate) const PUSH23: u32 = 0x76;
-pub(crate) const PUSH24: u32 = 0x77;
-pub(crate) const PUSH25: u32 = 0x78;
-pub(crate) const PUSH26: u32 = 0x79;
-pub(crate) const PUSH27: u32 = 0x7a;
-pub(crate) const PUSH28: u32 = 0x7b;
-pub(crate) const PUSH29: u32 = 0x7c;
-pub(crate) const PUSH30: u32 = 0x7d;
-pub(crate) const PUSH31: u32 = 0x7e;
-pub(crate) const PUSH32: u32 = 0x7f;
-pub(crate) const DUP1: u32 = 0x80;
-pub(crate) const DUP2: u32 = 0x81;
-pub(crate) const DUP3: u32 = 0x82;
-pub(crate) const DUP4: u32 = 0x83;
-pub(crate) const DUP5: u32 = 0x84;
-pub(crate) const DUP6: u32 = 0x85;
-pub(crate) const DUP7: u32 = 0x86;
-pub(crate) const DUP8: u32 = 0x87;
-pub(crate) const DUP9: u32 = 0x88;
-pub(crate) const DUP10: u32 = 0x89;
-pub(crate) const DUP11: u32 = 0x8a;
-pub(crate) const DUP12: u32 = 0x8b;
-pub(crate) const DUP13: u32 = 0x8c;
-pub(crate) const DUP14: u32 = 0x8d;
-pub(crate) const DUP15: u32 = 0x8e;
-pub(crate) const DUP16: u32 = 0x8f;
-pub(crate) const SWAP1: u32 = 0x90;
-pub(crate) const SWAP2: u32 = 0x91;
-pub(crate) const SWAP3: u32 = 0x92;
-pub(crate) const SWAP4: u32 = 0x93;
-pub(crate) const SWAP5: u32 = 0x94;
-pub(crate) const SWAP6: u32 = 0x95;
-pub(crate) const SWAP7: u32 = 0x96;
-pub(crate) const SWAP8: u32 = 0x97;
-pub(crate) const SWAP9: u32 = 0x98;
-pub(crate) const SWAP10: u32 = 0x99;
-pub(crate) const SWAP11: u32 = 0x9a;
-pub(crate) const SWAP12: u32 = 0x9b;
-pub(crate) const SWAP13: u32 = 0x9c;
-pub(crate) const SWAP14: u32 = 0x9d;
-pub(crate) const SWAP15: u32 = 0x9e;
-pub(crate) const SWAP16: u32 = 0x9f;
-pub(crate) const RETURN: u32 = 0xf3;
-pub(crate) const REVERT: u32 = 0xfd;
-pub(crate) const INVALID: u32 = 0xfe;
-pub(crate) const EOFMAGIC: u32 = 0xef;
-pub(crate) const SHA3: u32 = 0x20;
-pub(crate) const ADDRESS: u32 = 0x30;
-pub(crate) const BALANCE: u32 = 0x31;
-pub(crate) const SELFBALANCE: u32 = 0x47;
-pub(crate) const BASEFEE: u32 = 0x48;
-pub(crate) const ORIGIN: u32 = 0x32;
-pub(crate) const CALLER: u32 = 0x33;
-pub(crate) const CALLVALUE: u32 = 0x34;
-pub(crate) const GASPRICE: u32 = 0x3a;
-pub(crate) const EXTCODESIZE: u32 = 0x3b;
-pub(crate) const EXTCODECOPY: u32 = 0x3c;
-pub(crate) const EXTCODEHASH: u32 = 0x3f;
-pub(crate) const RETURNDATASIZE: u32 = 0x3d;
-pub(crate) const RETURNDATACOPY: u32 = 0x3e;
-pub(crate) const BLOCKHASH: u32 = 0x40;
-pub(crate) const COINBASE: u32 = 0x41;
-pub(crate) const TIMESTAMP: u32 = 0x42;
-pub(crate) const NUMBER: u32 = 0x43;
-pub(crate) const DIFFICULTY: u32 = 0x44;
-pub(crate) const GASLIMIT: u32 = 0x45;
-pub(crate) const SLOAD: u32 = 0x54;
-pub(crate) const SSTORE: u32 = 0x55;
-pub(crate) const GAS: u32 = 0x5a;
-pub(crate) const LOG0: u32 = 0xa0;
-pub(crate) const LOG1: u32 = 0xa1;
-pub(crate) const LOG2: u32 = 0xa2;
-pub(crate) const LOG3: u32 = 0xa3;
-pub(crate) const LOG4: u32 = 0xa4;
-pub(crate) const CREATE: u32 = 0xf0;
-pub(crate) const CALL: u32 = 0xf1;
-pub(crate) const CALLCODE: u32 = 0xf2;
-pub(crate) const DELEGATECALL: u32 = 0xf4;
-pub(crate) const CREATE2: u32 = 0xf5;
-pub(crate) const STATICCALL: u32 = 0xfa;
-pub(crate) const SELFDESTRUCT: u32 = 0xff;
-pub(crate) const CHAINID: u32 = 0x46;
+#[derive(Debug, Clone, Eq, Hash, PartialEq, FromPrimitive, ToPrimitive)]
+pub enum OpCodes {
+    STOP = 0x00,
+    ADD = 0x01,
+    MUL = 0x02,
+    SUB = 0x03,
+    DIV = 0x04,
+    SDIV = 0x05,
+    MOD = 0x06,
+    SMOD = 0x07,
+    ADDMOD = 0x08,
+    MULMOD = 0x09,
+    EXP = 0x0a,
+    SIGNEXTEND = 0x0b,
+    LT = 0x10,
+    GT = 0x11,
+    SLT = 0x12,
+    SGT = 0x13,
+    EQ = 0x14,
+    ISZERO = 0x15,
+    AND = 0x16,
+    OR = 0x17,
+    XOR = 0x18,
+    NOT = 0x19,
+    BYTE = 0x1a,
+    CALLDATALOAD = 0x35,
+    CALLDATASIZE = 0x36,
+    CALLDATACOPY = 0x37,
+    CODESIZE = 0x38,
+    CODECOPY = 0x39,
+    SHL = 0x1b,
+    SHR = 0x1c,
+    SAR = 0x1d,
+    POP = 0x50,
+    MLOAD = 0x51,
+    MSTORE = 0x52,
+    MSTORE8 = 0x53,
+    JUMP = 0x56,
+    JUMPI = 0x57,
+    PC = 0x58,
+    MSIZE = 0x59,
+    JUMPDEST = 0x5b,
+    PUSH0 = 0x5f,
+    PUSH1 = 0x60,
+    PUSH2 = 0x61,
+    PUSH3 = 0x62,
+    PUSH4 = 0x63,
+    PUSH5 = 0x64,
+    PUSH6 = 0x65,
+    PUSH7 = 0x66,
+    PUSH8 = 0x67,
+    PUSH9 = 0x68,
+    PUSH10 = 0x69,
+    PUSH11 = 0x6a,
+    PUSH12 = 0x6b,
+    PUSH13 = 0x6c,
+    PUSH14 = 0x6d,
+    PUSH15 = 0x6e,
+    PUSH16 = 0x6f,
+    PUSH17 = 0x70,
+    PUSH18 = 0x71,
+    PUSH19 = 0x72,
+    PUSH20 = 0x73,
+    PUSH21 = 0x74,
+    PUSH22 = 0x75,
+    PUSH23 = 0x76,
+    PUSH24 = 0x77,
+    PUSH25 = 0x78,
+    PUSH26 = 0x79,
+    PUSH27 = 0x7a,
+    PUSH28 = 0x7b,
+    PUSH29 = 0x7c,
+    PUSH30 = 0x7d,
+    PUSH31 = 0x7e,
+    PUSH32 = 0x7f,
+    DUP1 = 0x80,
+    DUP2 = 0x81,
+    DUP3 = 0x82,
+    DUP4 = 0x83,
+    DUP5 = 0x84,
+    DUP6 = 0x85,
+    DUP7 = 0x86,
+    DUP8 = 0x87,
+    DUP9 = 0x88,
+    DUP10 = 0x89,
+    DUP11 = 0x8a,
+    DUP12 = 0x8b,
+    DUP13 = 0x8c,
+    DUP14 = 0x8d,
+    DUP15 = 0x8e,
+    DUP16 = 0x8f,
+    SWAP1 = 0x90,
+    SWAP2 = 0x91,
+    SWAP3 = 0x92,
+    SWAP4 = 0x93,
+    SWAP5 = 0x94,
+    SWAP6 = 0x95,
+    SWAP7 = 0x96,
+    SWAP8 = 0x97,
+    SWAP9 = 0x98,
+    SWAP10 = 0x99,
+    SWAP11 = 0x9a,
+    SWAP12 = 0x9b,
+    SWAP13 = 0x9c,
+    SWAP14 = 0x9d,
+    SWAP15 = 0x9e,
+    SWAP16 = 0x9f,
+    RETURN = 0xf3,
+    REVERT = 0xfd,
+    INVALID = 0xfe,
+    EOFMAGIC = 0xef,
+    SHA3 = 0x20,
+    ADDRESS = 0x30,
+    BALANCE = 0x31,
+    SELFBALANCE = 0x47,
+    BASEFEE = 0x48,
+    ORIGIN = 0x32,
+    CALLER = 0x33,
+    CALLVALUE = 0x34,
+    GASPRICE = 0x3a,
+    EXTCODESIZE = 0x3b,
+    EXTCODECOPY = 0x3c,
+    EXTCODEHASH = 0x3f,
+    RETURNDATASIZE = 0x3d,
+    RETURNDATACOPY = 0x3e,
+    BLOCKHASH = 0x40,
+    COINBASE = 0x41,
+    TIMESTAMP = 0x42,
+    NUMBER = 0x43,
+    DIFFICULTY = 0x44,
+    GASLIMIT = 0x45,
+    SLOAD = 0x54,
+    SSTORE = 0x55,
+    GAS = 0x5a,
+    LOG0 = 0xa0,
+    LOG1 = 0xa1,
+    LOG2 = 0xa2,
+    LOG3 = 0xa3,
+    LOG4 = 0xa4,
+    CREATE = 0xf0,
+    CALL = 0xf1,
+    CALLCODE = 0xf2,
+    DELEGATECALL = 0xf4,
+    CREATE2 = 0xf5,
+    STATICCALL = 0xfa,
+    SELFDESTRUCT = 0xff,
+    CHAINID = 0x46,
+}
+
+impl fmt::LowerHex for OpCodes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:x}", ToPrimitive::to_u32(self).unwrap())
+    }
+}
