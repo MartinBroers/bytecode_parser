@@ -101,6 +101,7 @@ pub struct JumpInstruction {
     pub jump_type: JumpType,
     pub target: Option<Hex>,
     pub source: Hex,
+    pub condition: Option<Hex>,
 }
 impl std::fmt::Debug for JumpInstruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

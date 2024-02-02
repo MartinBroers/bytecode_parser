@@ -7,6 +7,7 @@ use crate::instruction::{Hex, Instruction, JumpInstruction, JumpType, ParsedInst
 
 pub enum OpCodeResult {
     JumpInstruction(JumpInstruction),
+    ConditionalJumpInstruction(JumpInstruction),
     End,
     Ok,
 }
@@ -90,11 +91,26 @@ impl Instruction {
     fn jumpdest(&self) -> Result<OpCodeResult, ()> {
         Ok(OpCodeResult::Ok)
     }
+    fn jumpi(&self, stack: &mut Vec<Hex>) -> Result<OpCodeResult, ()> {
+        let target = stack.pop();
+        let condition = stack.pop();
+        println!("jumpi: target: {:?}, condition: {:?}", target, condition);
+        let jump_instruction = JumpInstruction {
+            instruction: self.clone(),
+            jump_type: JumpType::Conditional,
+            target,
+            condition,
+            source: self.index,
+        };
+
+        Ok(OpCodeResult::ConditionalJumpInstruction(jump_instruction))
+    }
     fn jump(&self, stack: &mut Vec<Hex>) -> Result<OpCodeResult, ()> {
         let jump_instruction = JumpInstruction {
             instruction: self.clone(),
             jump_type: JumpType::Unconditional,
             target: stack.pop(),
+            condition: None,
             source: self.index,
         };
 
@@ -108,7 +124,6 @@ impl Instruction {
         pc: &mut Hex,
         input_arguments: &Vec<Hex>,
     ) -> Result<OpCodeResult, ()> {
-        println!("Instruction::parse pc: {}", pc);
         match self.opcode.code {
             OpCodes::STOP => self.stop(stack),
             OpCodes::ADD => self.add(stack),
@@ -146,7 +161,7 @@ impl Instruction {
             OpCodes::MSTORE => todo!(),
             OpCodes::MSTORE8 => todo!(),
             OpCodes::JUMP => self.jump(stack),
-            OpCodes::JUMPI => todo!(),
+            OpCodes::JUMPI => self.jumpi(stack),
             OpCodes::PC => todo!(),
             OpCodes::MSIZE => todo!(),
             OpCodes::JUMPDEST => self.jumpdest(),

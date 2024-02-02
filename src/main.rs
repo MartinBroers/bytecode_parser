@@ -1,8 +1,11 @@
+mod flow;
+mod flow_parser;
 mod instruction;
 mod opcode;
 mod parser;
 mod utils;
 
+use flow_parser::FlowParser;
 use log::{error, info, warn};
 use parser::Parser;
 use std::{
@@ -90,6 +93,8 @@ fn main() {
         info!("Resolving jumps");
         parser.resolve_jumps();
     }
+    let mut flow_parser = FlowParser::new(parser.get_instruction_sets(), parser.get_instructions());
+    flow_parser.parse_flows();
 }
 
 #[cfg(test)]
