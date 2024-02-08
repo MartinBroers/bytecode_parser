@@ -42,7 +42,7 @@ impl FlowParser<'_> {
             let parsed_instruction_set = ParsedInstructionSet {
                 start: instruction.start,
                 end: instruction.end,
-                target: jump.target,
+                target: jump.target.clone(),
                 jump: Some(jump.clone()),
                 stack: instruction.stack.clone(),
             };
@@ -63,7 +63,7 @@ impl FlowParser<'_> {
             last_step.target, last_step.jump, last_step.stack
         );
             if let Some(target) = last_step.target {
-                if let Some(next_step) = self.instruction_sets.get(&target) {
+                if let Some(next_step) = self.instruction_sets.get(&target.value) {
                     println!("Our next step starts at {0:?}", next_step.start);
                     println!("Our old next step stack is {0:?}", next_step.stack);
                     println!("{:?}", flow);
@@ -97,7 +97,7 @@ impl FlowParser<'_> {
                         let new_parsed_instruction_set = ParsedInstructionSet {
                             start: next_step.start,
                             end: next_step.end,
-                            target: next_step_jump.target,
+                            target: next_step_jump.target.clone(),
                             jump: Some(next_step_jump.clone()),
                             stack: next_step.stack.clone(),
                         };

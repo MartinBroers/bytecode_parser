@@ -1,18 +1,19 @@
 use std::collections::HashMap;
 
-use log::info;
-
-use crate::instruction::{Hex, JumpInstruction};
+use crate::{
+    instruction::{Hex, JumpInstruction},
+    stack::{Stack, StackElement},
+};
 
 #[derive(Debug, Clone)]
 pub struct ParsedInstructionSet {
     pub start: Hex,
     pub end: Hex,
-    pub target: Option<Hex>,
+    pub target: Option<StackElement>,
 
     pub jump: Option<JumpInstruction>,
 
-    pub stack: Vec<Hex>,
+    pub stack: Stack,
 }
 
 #[derive(Clone, Debug)]
@@ -34,8 +35,8 @@ impl Flow {
     // Return the target for which we have no continuation.
     pub fn get_last_step(&self) -> Option<ParsedInstructionSet> {
         for (_, step) in &self.steps {
-            if let Some(target) = step.target {
-                if self.steps.get(&target).is_none() {
+            if let Some(target) = &step.target {
+                if self.steps.get(&target.value).is_none() {
                     return Some(step.clone());
                 }
             } else {
@@ -46,11 +47,14 @@ impl Flow {
     }
 
     pub fn print(&self) {
-        let mut target = Some(Hex(0));
+        let mut target = Some(StackElement {
+            value: Hex(0),
+            origin: Hex(0),
+        });
         while let Some(t) = target {
-            if let Some(step) = self.steps.get(&t) {
+            if let Some(step) = self.steps.get(&t.value) {
                 println!("step start {:?}, jumping to {:?}", step.start, step.target);
-                target = step.target;
+                target = step.target.clone();
             } else {
                 break;
             }

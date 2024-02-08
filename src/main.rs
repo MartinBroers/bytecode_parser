@@ -3,6 +3,7 @@ mod flow_parser;
 mod instruction;
 mod opcode;
 mod parser;
+mod stack;
 mod utils;
 
 use flow_parser::FlowParser;

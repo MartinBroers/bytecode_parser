@@ -1,7 +1,10 @@
 use core::fmt;
 use std::ops::{Add, AddAssign, Mul};
 
-use crate::opcode::OpCode;
+use crate::{
+    opcode::OpCode,
+    stack::{Stack, StackElement},
+};
 
 #[derive(Clone, Default, PartialEq, Copy, PartialOrd, Hash, Eq)]
 pub struct Hex(pub u32);
@@ -81,7 +84,7 @@ impl std::fmt::Debug for Instruction {
 }
 
 impl ParsedInstruction {
-    pub fn new(instruction: Instruction, stack: Vec<Hex>) -> ParsedInstruction {
+    pub fn new(instruction: Instruction, stack: Stack) -> ParsedInstruction {
         ParsedInstruction {
             instruction,
             used_arg: None,
@@ -95,13 +98,13 @@ pub enum JumpType {
     Unconditional,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq)]
 pub struct JumpInstruction {
     pub instruction: Instruction,
     pub jump_type: JumpType,
-    pub target: Option<Hex>,
+    pub target: Option<StackElement>,
     pub source: Hex,
-    pub condition: Option<Hex>,
+    pub condition: Option<StackElement>,
 }
 impl std::fmt::Debug for JumpInstruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -113,7 +116,7 @@ impl std::fmt::Debug for JumpInstruction {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone)]
 pub struct InstructionSet {
     pub instructions: Vec<ParsedInstruction>,
     pub start: Hex,
@@ -121,7 +124,7 @@ pub struct InstructionSet {
 
     pub jumps: Vec<JumpInstruction>,
 
-    pub stack: Vec<Hex>,
+    pub stack: Stack,
 }
 impl std::fmt::Debug for InstructionSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

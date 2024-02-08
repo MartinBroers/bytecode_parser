@@ -1,9 +1,12 @@
 use core::fmt;
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::ToPrimitive;
-use std::{collections::HashMap, fmt::LowerHex, io::Error};
+use std::collections::HashMap;
 
-use crate::instruction::{Hex, Instruction, JumpInstruction, JumpType, ParsedInstruction};
+use crate::{
+    instruction::{Hex, Instruction, JumpInstruction, JumpType},
+    stack::{Stack, StackElement},
+};
 
 pub enum OpCodeResult {
     JumpInstruction(JumpInstruction),
@@ -43,26 +46,32 @@ impl fmt::Debug for OpCode {
 }
 
 impl Instruction {
-    fn stop(&self, _stack: &mut Vec<Hex>) -> Result<OpCodeResult, ()> {
+    fn stop(&self, _stack: &mut Stack) -> Result<OpCodeResult, ()> {
         Ok(OpCodeResult::End)
     }
-    fn pop(&self, stack: &mut Vec<Hex>) -> Result<OpCodeResult, ()> {
+    fn pop(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
         stack.pop();
         Ok(OpCodeResult::Ok)
     }
-    fn add(&self, stack: &mut Vec<Hex>) -> Result<OpCodeResult, ()> {
+    fn add(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
         let left = stack.pop().ok_or(())?;
         let right = stack.pop().ok_or(())?;
-        stack.push(left + right);
+        stack.push(StackElement {
+            value: left.value + right.value,
+            origin: self.index,
+        });
         Ok(OpCodeResult::Ok)
     }
-    fn mul(&self, stack: &mut Vec<Hex>) -> Result<OpCodeResult, ()> {
+    fn mul(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
         let left = stack.pop().ok_or(())?;
         let right = stack.pop().ok_or(())?;
-        stack.push(left * right);
+        stack.push(StackElement {
+            value: left.value * right.value,
+            origin: self.index,
+        });
         Ok(OpCodeResult::Ok)
     }
-    fn swapx(&self, num_swap: u32, stack: &mut Vec<Hex>) -> Result<OpCodeResult, ()> {
+    fn swapx(&self, num_swap: u32, stack: &mut Stack) -> Result<OpCodeResult, ()> {
         let mut swaps = Vec::new();
         for _ in 0..=num_swap {
             swaps.push(match stack.pop() {
@@ -79,19 +88,24 @@ impl Instruction {
     fn pushx(
         &self,
         num_push: usize,
-        stack: &mut Vec<Hex>,
+        stack: &mut Stack,
         pc: &mut Hex,
         input_arguments: &Vec<Hex>,
     ) -> Result<OpCodeResult, ()> {
         *pc += Hex(num_push.try_into().unwrap());
         assert!(input_arguments.len() == num_push);
-        stack.extend(input_arguments);
+        for element in input_arguments {
+            stack.push(StackElement {
+                value: *element,
+                origin: self.index,
+            });
+        }
         Ok(OpCodeResult::Ok)
     }
     fn jumpdest(&self) -> Result<OpCodeResult, ()> {
         Ok(OpCodeResult::Ok)
     }
-    fn jumpi(&self, stack: &mut Vec<Hex>) -> Result<OpCodeResult, ()> {
+    fn jumpi(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
         let target = stack.pop();
         let condition = stack.pop();
         println!("jumpi: target: {:?}, condition: {:?}", target, condition);
@@ -105,7 +119,7 @@ impl Instruction {
 
         Ok(OpCodeResult::ConditionalJumpInstruction(jump_instruction))
     }
-    fn jump(&self, stack: &mut Vec<Hex>) -> Result<OpCodeResult, ()> {
+    fn jump(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
         let jump_instruction = JumpInstruction {
             instruction: self.clone(),
             jump_type: JumpType::Unconditional,
@@ -120,7 +134,7 @@ impl Instruction {
     // Parses the opcode and returns the stack
     pub fn parse(
         &self,
-        stack: &mut Vec<Hex>,
+        stack: &mut Stack,
         pc: &mut Hex,
         input_arguments: &Vec<Hex>,
     ) -> Result<OpCodeResult, ()> {

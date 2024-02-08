@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 
 #[cfg(not(test))]
-use log::{debug, error, info, warn}; // Use log crate when building application
+use log::{debug, info}; // Use log crate when building application
 
 #[cfg(test)]
-use std::{println as debug, println as info, println as warn, println as error}; // Workaround to use prinltn! for logs.
+use std::{println as debug, println as info}; // Workaround to use println! for logs.
 
 use crate::{
-    instruction::{Hex, Instruction, InstructionSet, JumpInstruction, JumpType, ParsedInstruction},
+    instruction::{Hex, Instruction, InstructionSet, JumpInstruction, ParsedInstruction},
     opcode::{self, opcodes},
+    stack::Stack,
     utils::find_sequence,
 };
 
@@ -83,8 +84,10 @@ impl Parser {
         let mut result = Vec::new();
         for (_, instruction_set) in &self.instruction_sets {
             for jump in &instruction_set.jumps {
-                if jump.target.is_some_and(|target| target == destination) {
-                    result.push(instruction_set.clone());
+                if let Some(target) = &jump.target {
+                    if target.value == destination {
+                        result.push(instruction_set.clone());
+                    }
                 }
             }
         }
@@ -197,7 +200,7 @@ fn parse_instruction_sets(
 pub fn parse_instruction_set(
     stack_pointer: Hex,
     instructions: &HashMap<Hex, Instruction>,
-    input_stack: Option<Vec<Hex>>,
+    input_stack: Option<Stack>,
     end_at: Option<Hex>,
 ) -> Option<InstructionSet> {
     let mut instructions_section: InstructionSet = InstructionSet {
@@ -205,9 +208,9 @@ pub fn parse_instruction_set(
         start: stack_pointer,
         end: stack_pointer,
         jumps: Vec::new(),
-        stack: Vec::new(),
+        stack: Stack::new(),
     };
-    let mut stack: Vec<Hex> = input_stack.unwrap_or(Vec::new());
+    let mut stack: Stack = input_stack.unwrap_or(Stack::new());
     let mut stack_pointer = stack_pointer;
     while let Some(instruction) = instructions.get(&stack_pointer) {
         println!("parsing {:?}", stack_pointer);
@@ -310,7 +313,8 @@ fn bytecode_to_instructions(raw_bytecode: Vec<u32>) -> HashMap<Hex, Instruction>
 mod tests {
     use crate::{
         instruction::Hex,
-        opcode::OpCodes::{ADD, JUMP, JUMPDEST, JUMPI, POP, PUSH1, STOP, SWAP1},
+        opcode::OpCodes::{ADD, JUMP, JUMPDEST, JUMPI, POP, PUSH1, STOP},
+        stack::StackElement,
     };
 
     use super::{bytecode_to_instructions, Parser};
@@ -351,7 +355,7 @@ mod tests {
 
         // we have two sections; one before the jump and one after the jump. From JUMPDEST to STOP.
         assert_eq!(instruction_sections.len(), 2);
-        let jump_target = instruction_sections
+        let jump_target = &instruction_sections
             .get(&Hex(0x0))
             .unwrap()
             .jumps
@@ -359,7 +363,13 @@ mod tests {
             .unwrap()
             .target;
         let jump_dest = instruction_sections.get(&Hex(0x3)).unwrap().start;
-        assert_eq!(jump_target, Some(jump_dest));
+        assert_eq!(
+            *jump_target,
+            Some(StackElement {
+                value: jump_dest,
+                origin: Hex(0)
+            })
+        );
     }
     #[test]
     fn instructions_between_jump_target_push_and_jump_instruction() {
@@ -381,7 +391,7 @@ mod tests {
         let instruction_sections = parser.get_instruction_sets();
         assert_eq!(instruction_sections.len(), 2);
         println!("instruction_sections: {:?}", instruction_sections);
-        let jump_target = instruction_sections
+        let jump_target = &instruction_sections
             .get(&Hex(0x0))
             .unwrap()
             .jumps
@@ -389,7 +399,13 @@ mod tests {
             .unwrap()
             .target;
         let jump_dest = instruction_sections.get(&Hex(0x9)).unwrap().start;
-        assert_eq!(jump_target, Some(jump_dest));
+        assert_eq!(
+            *jump_target,
+            Some(StackElement {
+                value: jump_dest,
+                origin: Hex(0)
+            })
+        );
     }
 
     #[test]
@@ -415,10 +431,28 @@ mod tests {
 
         println!("jumps: {:?}", jumps);
         assert_ne!(jumps.iter().find(|jump| jump.source == Hex(0)), None);
-        assert_ne!(jumps.iter().find(|jump| jump.target == Some(Hex(3))), None);
+        assert_ne!(
+            jumps
+                .iter()
+                .find(|jump| if let Some(target) = &jump.target {
+                    Some(target.value)
+                } else {
+                    None
+                } == Some(Hex(3))),
+            None
+        );
 
         assert_ne!(jumps.iter().find(|jump| jump.source == Hex(3)), None);
-        assert_ne!(jumps.iter().find(|jump| jump.target == Some(Hex(7))), None);
+        assert_ne!(
+            jumps
+                .iter()
+                .find(|jump| if let Some(target) = &jump.target {
+                    Some(target.value)
+                } else {
+                    None
+                } == Some(Hex(7))),
+            None
+        );
     }
 
     // - Jump value pushed in different section
@@ -448,12 +482,12 @@ mod tests {
         assert_eq!(jumps.len(), 2);
         let section = jumps
             .iter()
-            .find(|&jump| jump.source == Hex(0) && jump.target == Some(Hex(5)));
+            .find(|&jump| jump.source == Hex(0) && get_option_value(&jump.target) == Some(Hex(5)));
         assert!(section.is_some());
 
         let section = jumps
             .iter()
-            .find(|&jump| jump.source == Hex(5) && jump.target == Some(Hex(7)));
+            .find(|&jump| jump.source == Hex(5) && get_option_value(&jump.target) == Some(Hex(7)));
         assert!(section.is_some());
     }
 
@@ -483,16 +517,36 @@ mod tests {
         let jumps = parser.get_all_jumps();
         assert_eq!(jumps.len(), 3);
         assert_ne!(jumps.iter().find(|jump| jump.source == Hex(0)), None);
-        assert_ne!(jumps.iter().find(|jump| jump.target == Some(Hex(7))), None);
+        assert_ne!(
+            jumps
+                .iter()
+                .find(|jump| get_option_value(&jump.target) == Some(Hex(0x7))),
+            None
+        );
 
         assert_ne!(jumps.iter().find(|jump| jump.source == Hex(7)), None);
-        assert_ne!(jumps.iter().find(|jump| jump.target == Some(Hex(9))), None);
+        assert_ne!(
+            jumps
+                .iter()
+                .find(|jump| get_option_value(&jump.target) == Some(Hex(0x9))),
+            None
+        );
 
         assert_ne!(jumps.iter().find(|jump| jump.source == Hex(9)), None);
         assert_ne!(
-            jumps.iter().find(|jump| jump.target == Some(Hex(0xb))),
+            jumps
+                .iter()
+                .find(|jump| get_option_value(&jump.target) == Some(Hex(0xb))),
             None
         );
+    }
+
+    fn get_option_value(target: &Option<StackElement>) -> Option<Hex> {
+        if let Some(target) = target {
+            Some(target.value)
+        } else {
+            None
+        }
     }
 
     #[test]
@@ -522,14 +576,36 @@ mod tests {
         let jumps = parser.get_all_jumps();
         assert_eq!(jumps.len(), 3);
         assert_ne!(jumps.iter().find(|jump| jump.source == Hex(0)), None);
-        assert_ne!(jumps.iter().find(|jump| jump.target == Some(Hex(7))), None);
+        assert_ne!(
+            jumps.iter().find(|jump| jump.target
+                == Some(StackElement {
+                    value: Hex(7),
+                    origin: Hex(2)
+                })),
+            None
+        );
 
         assert_ne!(jumps.iter().find(|jump| jump.source == Hex(7)), None);
-        assert_ne!(jumps.iter().find(|jump| jump.target == Some(Hex(9))), None);
+        assert_ne!(
+            jumps
+                .iter()
+                .find(|jump| if let Some(target) = &jump.target {
+                    Some(target.value)
+                } else {
+                    None
+                } == Some(Hex(9))),
+            None
+        );
 
         assert_ne!(jumps.iter().find(|jump| jump.source == Hex(9)), None);
         assert_ne!(
-            jumps.iter().find(|jump| jump.target == Some(Hex(0xb))),
+            jumps
+                .iter()
+                .find(|jump| if let Some(target) = &jump.target {
+                    Some(target.value)
+                } else {
+                    None
+                } == Some(Hex(0xb))),
             None
         );
     }
