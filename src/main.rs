@@ -8,45 +8,45 @@ mod parser;
 mod stack;
 mod utils;
 
+use clap::Parser;
 use flow_parser::FlowParser;
-use log::{error, warn};
-use parser::Parser;
+use log::{error, info, warn};
+use parser::Parser as BytecodeParser;
+use stack::StackElement;
 use std::{
     env,
     fs::File,
-    io::{stdin, BufRead, BufReader, Error, Read},
+    io::{self, stdin, BufRead, BufReader, Error, ErrorKind, Read},
     path::Path,
 };
 
-fn read_bytecode<R: Read>(reader: R) -> Option<Vec<u32>> {
-    let reader = BufReader::new(reader);
-    let lines: Vec<Result<String, Error>> = reader.lines().collect();
-    let bytecode: String;
+pub static CALLVALUE: Option<StackElement> = None;
 
-    if let Some(last_line) = lines.last() {
-        if let Ok(last_line) = last_line {
-            bytecode = last_line.clone();
-        } else {
-            warn!("Could not parse input: {:?}", last_line);
-            return None;
-        }
-    } else {
-        warn!("Could not parse input: {:?}", lines);
-        return None;
-    }
+#[derive(Parser, Debug)]
+struct Args {
+    #[arg(long)]
+    input: Option<String>,
 
-    for char in bytecode.chars() {
+    #[arg(long)]
+    callvalue: Option<String>,
+
+    #[arg(long)]
+    filename: Option<String>,
+}
+
+fn read_bytecode(input: String) -> Option<Vec<u32>> {
+    for char in input.chars() {
         if !char.is_ascii_hexdigit() {
             warn!(
                 "Illegal input, contains non alphanumeric characters: {}",
-                bytecode
+                input
             );
             return None;
         }
     }
 
     let radix: u32 = 16;
-    let bytecode: Vec<char> = bytecode.chars().collect();
+    let bytecode: Vec<char> = input.chars().collect();
     let bytecode: Vec<u32> = bytecode
         .chunks(2)
         .map(|x| {
@@ -54,46 +54,58 @@ fn read_bytecode<R: Read>(reader: R) -> Option<Vec<u32>> {
         })
         .collect();
 
-    Some(bytecode)
+    if bytecode.len() == 0 {
+        None
+    } else {
+        Some(bytecode)
+    }
 }
 
-fn main() {
+fn main() -> Result<(), std::io::Error> {
     env_logger::init();
-    let args: Vec<String> = env::args().collect();
-    let bytecode;
+    let args = Args::parse();
+    let input: String;
 
-    if args.len() == 1 {
-        let stdin = stdin();
-        let handle = stdin.lock();
-        let input = read_bytecode(handle);
-        if let Some(input) = input {
-            bytecode = input;
-        } else {
-            error!("No bytecode found in input");
-            return;
-        }
-    } else if args.len() == 2 {
-        let file_path = Path::new(&args[1]);
+    if let Some(cli_input) = args.input {
+        let cli_input = cli_input.lines().last().unwrap();
+        input = cli_input.to_string();
+    } else if let Some(filename) = args.filename {
+        let file_path = Path::new(&filename);
         if let Ok(file) = File::open(file_path) {
-            let input = read_bytecode(file);
-            if let Some(input) = input {
-                bytecode = input;
+            let reader = BufReader::new(file);
+            let lines: Vec<Result<String, Error>> = reader.lines().collect();
+            if let Some(last_line) = lines.last() {
+                if let Ok(last_line) = last_line {
+                    input = last_line.clone();
+                } else {
+                    warn!("Could not parse input: {:?}", last_line);
+                    return Err(Error::from(ErrorKind::InvalidInput));
+                }
             } else {
-                error!("No bytecode found in input");
-                return;
+                warn!("Could not parse input: {:?}", lines);
+                return Err(Error::from(ErrorKind::InvalidInput));
             }
         } else {
-            error!("Error: Unable to open file '{}'", &args[1]);
-            return;
+            return Err(Error::from(ErrorKind::NotFound));
         }
     } else {
-        error!("Usage: {} [file]", &args[0]);
-        return;
+        error!("Provide input; either using an input string or a file. ");
+        return Err(Error::from(ErrorKind::InvalidInput));
     }
 
-    let mut parser = Parser::new(bytecode);
+    let bytecode;
+    let input = read_bytecode(input);
+    if let Some(input) = input {
+        bytecode = input;
+    } else {
+        error!("No bytecode found in input");
+        return Err(Error::from(io::ErrorKind::InvalidData));
+    }
+    let parser = BytecodeParser::new(bytecode);
     let mut flow_parser = FlowParser::new(parser.get_instruction_sets(), parser.get_instructions());
     flow_parser.parse_flows();
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -107,8 +119,6 @@ mod tests {
     #[test]
     fn read_valid_bytecode() {
         let bytes: &'static [u8] = b"\
-            ======= storecontract/Store.sol:Store =======\n\
-Binary of the runtime part:\n\
 608060405234801561001057600080fd5b50600436106100365760003560e\
 01c80636057361d1461003b5780638f88708b14610057575b600080fd5b61\
 005560048036038101906100509190610115565b610087565b005b6100716\
@@ -128,14 +138,14 @@ b92915050565b60006101da826100df565b91506101e5836100df565b9250\
 8282019050808211156101fd576101fc61016c565b5b9291505056fea2646\
 9706673582212206471fae051fe349afbc0803628e924a4d57b36e4067d38\
 265220429afd34242d64736f6c63430008130033\
-\n";
-        let cursor = Cursor::new(bytes);
+";
+        let cursor = String::from_utf8(bytes.to_vec()).unwrap();
         let bytecode = super::read_bytecode(cursor).expect("Could not parse input");
         assert_eq!(96, *bytecode.first().unwrap());
         assert_eq!(51, *bytecode.last().unwrap());
 
         let bytes: &'static [u8] = b"11";
-        let cursor = Cursor::new(bytes);
+        let cursor = String::from_utf8(bytes.to_vec()).unwrap();
         let bytecode = super::read_bytecode(cursor).expect("Could not parse input");
         assert_eq!(17, *bytecode.first().unwrap());
         assert_eq!(17, *bytecode.last().unwrap());
@@ -145,24 +155,22 @@ b92915050565b60006101da826100df565b91506101e5836100df565b9250\
     fn invalid_input_space() {
         init();
         let input = "Hello world!";
-        let cursur = Cursor::new(input);
-        let result = super::read_bytecode(cursur);
+        let cursor = input.to_string();
+        let result = super::read_bytecode(cursor);
         assert!(result.is_none());
     }
     #[test]
     fn invalid_input_no_hex() {
         init();
-        let input = "Helloworld";
-        let cursur = Cursor::new(input);
-        let result = super::read_bytecode(cursur);
+        let input = "Helloworld".to_string();
+        let result = super::read_bytecode(input);
         assert!(result.is_none());
     }
     #[test]
     fn empty_input() {
         init();
-        let input = "";
-        let cursur = Cursor::new(input);
-        let result = super::read_bytecode(cursur);
+        let input = "".to_string();
+        let result = super::read_bytecode(input);
         assert!(result.is_none());
     }
 }
