@@ -1,7 +1,10 @@
+use log::info;
 use std::collections::HashMap;
 
 use crate::{
-    instruction::{Hex, JumpInstruction},
+    hex::Hex,
+    instruction::JumpInstruction,
+    memory::Memory,
     stack::{Stack, StackElement},
 };
 
@@ -14,6 +17,7 @@ pub struct ParsedInstructionSet {
     pub jump: Option<JumpInstruction>,
 
     pub stack: Stack,
+    pub memory: Memory,
 }
 
 #[derive(Clone, Debug)]
@@ -50,10 +54,11 @@ impl Flow {
         let mut target = Some(StackElement {
             value: Hex(0),
             origin: Hex(0),
+            size: 1,
         });
         while let Some(t) = target {
             if let Some(step) = self.steps.get(&t.value) {
-                println!("step start {:?}, jumping to {:?}", step.start, step.target);
+                info!("step start {:?}, jumping to {:?}", step.start, step.target);
                 target = step.target.clone();
             } else {
                 break;

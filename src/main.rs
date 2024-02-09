@@ -1,13 +1,15 @@
 mod flow;
 mod flow_parser;
+mod hex;
 mod instruction;
+mod memory;
 mod opcode;
 mod parser;
 mod stack;
 mod utils;
 
 use flow_parser::FlowParser;
-use log::{error, info, warn};
+use log::{error, warn};
 use parser::Parser;
 use std::{
     env,
@@ -90,10 +92,6 @@ fn main() {
     }
 
     let mut parser = Parser::new(bytecode);
-    if !parser.all_jumps_resolved() {
-        info!("Resolving jumps");
-        parser.resolve_jumps();
-    }
     let mut flow_parser = FlowParser::new(parser.get_instruction_sets(), parser.get_instructions());
     flow_parser.parse_flows();
 }

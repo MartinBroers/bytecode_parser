@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use crate::{
     flow::{Flow, ParsedInstructionSet},
-    instruction::{Hex, Instruction, InstructionSet, JumpInstruction, JumpType, ParsedInstruction},
+    hex::Hex,
+    instruction::{Instruction, InstructionSet, JumpType},
+    memory::Memory,
     parser::parse_instruction_set,
 };
 
@@ -28,6 +30,7 @@ impl FlowParser<'_> {
     // Iterate over all instruction sets and reconstruct all jumps.
     pub fn parse_flows(&mut self) {
         let new_step = self.instruction_sets.get(&(Hex(0))).unwrap().clone();
+        let mut memory = Memory::new();
         for jump in new_step.jumps {
             // Update the stack for this section
             let instruction = parse_instruction_set(
@@ -35,6 +38,7 @@ impl FlowParser<'_> {
                 &self.instructions,
                 None,
                 Some(jump.instruction.index),
+                &mut memory,
             )
             .unwrap();
             println!("instruction Hex(0): {:?}", instruction);
@@ -45,6 +49,7 @@ impl FlowParser<'_> {
                 target: jump.target.clone(),
                 jump: Some(jump.clone()),
                 stack: instruction.stack.clone(),
+                memory: memory.clone(),
             };
             let flow = Flow::new(parsed_instruction_set);
             let flows = self.parse_next_step(flow);
@@ -79,11 +84,13 @@ impl FlowParser<'_> {
                             "Parsing next step, starting from {:?}, ending at {:?}",
                             next_step.start, jump.instruction.index
                         );
+                        let mut memory = last_step.memory.clone();
                         let next_step = parse_instruction_set(
                             next_step.start,
                             &self.instructions,
                             Some(last_step.stack.clone()),
                             Some(jump.instruction.index),
+                            &mut memory,
                         )
                         .unwrap();
                         println!("Our new next step stack is {0:?}", next_step.stack);
@@ -100,6 +107,7 @@ impl FlowParser<'_> {
                             target: next_step_jump.target.clone(),
                             jump: Some(next_step_jump.clone()),
                             stack: next_step.stack.clone(),
+                            memory,
                         };
                         flow.add_step(new_parsed_instruction_set);
                         if jump.jump_type == JumpType::Conditional {
@@ -150,6 +158,8 @@ mod tests {
         opcode::OpCodes::{JUMP, JUMPDEST, JUMPI, PUSH1, STOP},
         parser::Parser,
     };
+    use test_log::test;
+
     #[test]
     fn parse_simple_flow() {
         let input = Vec::from([

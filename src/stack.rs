@@ -1,9 +1,10 @@
-use crate::instruction::Hex;
+use crate::hex::Hex;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StackElement {
     pub value: Hex,
     pub origin: Hex,
+    pub size: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -28,5 +29,10 @@ impl Stack {
 
     pub fn extend(&mut self, elements: Stack) {
         self.elements.extend(elements.elements);
+    }
+
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        self.elements.len()
     }
 }
