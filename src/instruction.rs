@@ -82,7 +82,7 @@ impl Instruction {
         Ok(OpCodeResult::Ok)
     }
     fn pushx(&self, num_push: usize, stack: &mut Stack, pc: &mut Hex) -> Result<OpCodeResult, ()> {
-        *pc += Hex(1);
+        *pc += Hex(1) + Hex((num_push - 1) as u64);
         assert!(self.args.len() == num_push);
         let mut value = Hex(0);
         for element in &self.args {
@@ -405,15 +405,6 @@ impl std::fmt::Debug for Instruction {
     }
 }
 
-impl ParsedInstruction {
-    pub fn new(instruction: Instruction, stack: Stack) -> ParsedInstruction {
-        ParsedInstruction {
-            instruction,
-            used_arg: None,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum JumpType {
     Conditional,
@@ -440,7 +431,6 @@ impl std::fmt::Debug for JumpInstruction {
 
 #[derive(Clone)]
 pub struct InstructionSet {
-    pub instructions: Vec<ParsedInstruction>,
     pub start: Hex,
     pub end: Hex,
 
@@ -451,17 +441,6 @@ pub struct InstructionSet {
 impl std::fmt::Debug for InstructionSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "start: {:04x}", self.start).unwrap();
-        for instruction in &self.instructions {
-            writeln!(
-                f,
-                "{:04x}\t{:?}\t{:?}\t{:?}",
-                instruction.instruction.index,
-                instruction.instruction.opcode,
-                instruction.used_arg,
-                instruction.instruction.args,
-            )
-            .unwrap();
-        }
         writeln!(
             f,
             "start: {}, end: {}, jumps: {:?}, stack: {:?}",
@@ -472,22 +451,14 @@ impl std::fmt::Debug for InstructionSet {
     }
 }
 
-impl InstructionSet {
-    pub fn push(&mut self, value: ParsedInstruction) {
-        self.instructions.push(value);
-    }
-    pub fn len(&self) -> usize {
-        self.instructions.len()
-    }
-}
 #[cfg(test)]
 mod tests {
     use crate::{
         hex::Hex,
         memory::{Memory, MemoryElement},
         opcode::{
-            opcodes, OpCode, OpCodeResult,
-            OpCodes::{self, PUSH1},
+            opcodes, OpCodeResult,
+            OpCodes::{self},
         },
         stack::{Stack, StackElement},
     };
@@ -536,7 +507,7 @@ mod tests {
         assert_eq!(elem.value, Hex(0xffeeddccbb));
         assert_eq!(elem.size, 5);
         assert_eq!(elem.origin, Hex(0));
-        assert_eq!(pc, Hex(1));
+        assert_eq!(pc, Hex(5));
     }
     #[test]
     fn mstore_basic() {
