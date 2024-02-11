@@ -43,6 +43,20 @@ impl Instruction {
         });
         Ok(OpCodeResult::Ok)
     }
+    fn lt(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
+        let left = stack.pop().ok_or(())?;
+        let right = stack.pop().ok_or(())?;
+        stack.push(StackElement {
+            value: if left.value < right.value {
+                Hex(1)
+            } else {
+                Hex(0)
+            },
+            origin: self.index,
+            size: 1,
+        });
+        Ok(OpCodeResult::Ok)
+    }
     fn swapx(&self, num_swap: u32, stack: &mut Stack) -> Result<OpCodeResult, ()> {
         let mut swaps = Vec::new();
         for _ in 0..=num_swap {
@@ -250,7 +264,7 @@ impl Instruction {
             OpCodes::LOG2 => todo!(),
             OpCodes::LOG3 => todo!(),
             OpCodes::LOG4 => todo!(),
-            OpCodes::LT => todo!(),
+            OpCodes::LT => self.lt(stack),
             OpCodes::MLOAD => todo!(),
             OpCodes::MOD => todo!(),
             OpCodes::MSIZE => todo!(),
