@@ -10,6 +10,7 @@ mod utils;
 
 use clap::Parser;
 use flow_parser::FlowParser;
+use hex::Hex;
 use log::{error, info, warn};
 use parser::Parser as BytecodeParser;
 use stack::StackElement;
@@ -20,7 +21,7 @@ use std::{
     path::Path,
 };
 
-pub static CALLVALUE: Option<StackElement> = None;
+pub static mut CALLVALUE: Option<StackElement> = None;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -61,15 +62,32 @@ fn read_bytecode(input: String) -> Option<Vec<u32>> {
     }
 }
 
+fn parse_args(args: &Args) -> Result<(), std::io::Error> {
+    if let Some(callvalue) = &args.callvalue {
+        let value: Hex = match Hex::try_from(callvalue) {
+            Ok(v) => v,
+            Err(e) => return Err(Error::new(ErrorKind::InvalidInput, e)),
+        };
+        unsafe {
+            CALLVALUE = Some(StackElement {
+                value,
+                origin: Hex(0),
+                size: (format!("{:x}", value.0).len() + 1) / 2 as usize,
+            });
+        }
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), std::io::Error> {
     env_logger::init();
     let args = Args::parse();
     let input: String;
 
-    if let Some(cli_input) = args.input {
+    if let Some(ref cli_input) = args.input {
         let cli_input = cli_input.lines().last().unwrap();
         input = cli_input.to_string();
-    } else if let Some(filename) = args.filename {
+    } else if let Some(ref filename) = args.filename {
         let file_path = Path::new(&filename);
         if let Ok(file) = File::open(file_path) {
             let reader = BufReader::new(file);
@@ -93,6 +111,10 @@ fn main() -> Result<(), std::io::Error> {
         return Err(Error::from(ErrorKind::InvalidInput));
     }
 
+    if let Err(e) = parse_args(&args) {
+        return Err(e);
+    };
+
     let bytecode;
     let input = read_bytecode(input);
     if let Some(input) = input {
@@ -111,6 +133,8 @@ fn main() -> Result<(), std::io::Error> {
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
+
+    use crate::{hex::Hex, CALLVALUE};
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -172,5 +196,44 @@ b92915050565b60006101da826100df565b91506101e5836100df565b9250\
         let input = "".to_string();
         let result = super::read_bytecode(input);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_input_callarg() {
+        let input = "123";
+        let args = super::Args {
+            input: None,
+            callvalue: Some(input.to_string()),
+            filename: None,
+        };
+        super::parse_args(&args);
+        let callvalue = unsafe { CALLVALUE.clone() }.unwrap();
+
+        assert_eq!(callvalue.value, Hex(0x7b));
+        assert_eq!(callvalue.size, 1);
+
+        let input = "256";
+        let args = super::Args {
+            input: None,
+            callvalue: Some(input.to_string()),
+            filename: None,
+        };
+        super::parse_args(&args);
+        let callvalue = unsafe { CALLVALUE.clone() }.unwrap();
+
+        assert_eq!(callvalue.value, Hex(0x0100));
+        assert_eq!(callvalue.size, 2);
+
+        let input = "";
+        let args = super::Args {
+            input: None,
+            callvalue: Some(input.to_string()),
+            filename: None,
+        };
+        super::parse_args(&args);
+        let callvalue = unsafe { CALLVALUE.clone() }.unwrap();
+
+        assert_eq!(callvalue.value, Hex(0x0100));
+        assert_eq!(callvalue.size, 2);
     }
 }

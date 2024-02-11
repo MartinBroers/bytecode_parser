@@ -6,6 +6,7 @@ use crate::{
     memory::Memory,
     opcode::{OpCode, OpCodeResult, OpCodes},
     stack::{Stack, StackElement},
+    CALLVALUE,
 };
 
 #[derive(Clone, Default, PartialEq, Eq, Hash)]
@@ -108,6 +109,23 @@ impl Instruction {
         Ok(OpCodeResult::Ok)
     }
 
+    fn callvalue(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
+        if let Some(callvalue) = unsafe { &CALLVALUE } {
+            stack.push(StackElement {
+                origin: self.index,
+                value: callvalue.value,
+                size: callvalue.size,
+            });
+        } else {
+            stack.push(StackElement {
+                origin: self.index,
+                value: Hex(0),
+                size: 1,
+            });
+        }
+        Ok(OpCodeResult::Ok)
+    }
+
     // Parses the opcode and returns the stack
     pub fn parse(
         &self,
@@ -130,7 +148,7 @@ impl Instruction {
             OpCodes::CALLDATALOAD => todo!(),
             OpCodes::CALLDATASIZE => todo!(),
             OpCodes::CALLER => todo!(),
-            OpCodes::CALLVALUE => todo!(),
+            OpCodes::CALLVALUE => self.callvalue(stack),
             OpCodes::CHAINID => todo!(),
             OpCodes::CODECOPY => todo!(),
             OpCodes::CODESIZE => todo!(),

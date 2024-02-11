@@ -1,5 +1,8 @@
 use core::fmt;
-use std::ops::{Add, AddAssign, BitAnd, Mul, Shl, Shr, Sub};
+use std::{
+    num::ParseIntError,
+    ops::{Add, AddAssign, BitAnd, Mul, Rem, Shl, Shr, Sub},
+};
 
 #[derive(Clone, Default, PartialEq, Copy, PartialOrd, Hash, Eq)]
 pub struct Hex(pub u64);
@@ -57,6 +60,15 @@ impl Sub for Hex {
     }
 }
 
+impl Rem for Hex {
+    type Output = Self;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        let Self(lhs) = self;
+        Self(lhs % rhs.0)
+    }
+}
+
 impl From<usize> for Hex {
     fn from(value: usize) -> Self {
         Hex(value as u64)
@@ -70,6 +82,13 @@ impl From<i32> for Hex {
 impl From<u32> for Hex {
     fn from(value: u32) -> Self {
         Hex(value as u64)
+    }
+}
+impl TryFrom<&String> for Hex {
+    type Error = ParseIntError;
+
+    fn try_from(value: &String) -> Result<Self, Self::Error> {
+        Ok(Hex(value.parse::<u64>()?))
     }
 }
 
