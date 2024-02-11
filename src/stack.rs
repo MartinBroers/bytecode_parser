@@ -31,7 +31,10 @@ impl Stack {
         self.elements.extend(elements.elements);
     }
 
-    #[cfg(test)]
+    pub fn get(&self, index: usize) -> Option<&StackElement> {
+        self.elements.get(index)
+    }
+
     pub fn len(&self) -> usize {
         self.elements.len()
     }

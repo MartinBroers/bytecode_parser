@@ -73,6 +73,17 @@ impl Instruction {
         });
         Ok(OpCodeResult::Ok)
     }
+
+    fn dupx(&self, num_dup: usize, stack: &mut Stack) -> Result<OpCodeResult, ()> {
+        let dup = stack.get(stack.len() - num_dup);
+        assert!(dup.is_some());
+        if let Some(value) = dup {
+            stack.push(value.clone());
+            Ok(OpCodeResult::Ok)
+        } else {
+            Err(())
+        }
+    }
     fn jumpdest(&self) -> Result<OpCodeResult, ()> {
         Ok(OpCodeResult::Ok)
     }
@@ -158,22 +169,22 @@ impl Instruction {
             OpCodes::DELEGATECALL => todo!(),
             OpCodes::DIFFICULTY => todo!(),
             OpCodes::DIV => todo!(),
-            OpCodes::DUP1 => todo!(),
-            OpCodes::DUP2 => todo!(),
-            OpCodes::DUP3 => todo!(),
-            OpCodes::DUP4 => todo!(),
-            OpCodes::DUP5 => todo!(),
-            OpCodes::DUP6 => todo!(),
-            OpCodes::DUP7 => todo!(),
-            OpCodes::DUP8 => todo!(),
-            OpCodes::DUP9 => todo!(),
-            OpCodes::DUP10 => todo!(),
-            OpCodes::DUP11 => todo!(),
-            OpCodes::DUP12 => todo!(),
-            OpCodes::DUP13 => todo!(),
-            OpCodes::DUP14 => todo!(),
-            OpCodes::DUP15 => todo!(),
-            OpCodes::DUP16 => todo!(),
+            OpCodes::DUP1 => self.dupx(1, stack),
+            OpCodes::DUP2 => self.dupx(2, stack),
+            OpCodes::DUP3 => self.dupx(3, stack),
+            OpCodes::DUP4 => self.dupx(4, stack),
+            OpCodes::DUP5 => self.dupx(5, stack),
+            OpCodes::DUP6 => self.dupx(6, stack),
+            OpCodes::DUP7 => self.dupx(7, stack),
+            OpCodes::DUP8 => self.dupx(8, stack),
+            OpCodes::DUP9 => self.dupx(9, stack),
+            OpCodes::DUP10 => self.dupx(10, stack),
+            OpCodes::DUP11 => self.dupx(11, stack),
+            OpCodes::DUP12 => self.dupx(12, stack),
+            OpCodes::DUP13 => self.dupx(13, stack),
+            OpCodes::DUP14 => self.dupx(14, stack),
+            OpCodes::DUP15 => self.dupx(15, stack),
+            OpCodes::DUP16 => self.dupx(16, stack),
             OpCodes::EOFMAGIC => todo!(),
             OpCodes::EQ => todo!(),
             OpCodes::EXP => todo!(),
@@ -541,5 +552,63 @@ mod tests {
                 origin: Some(Hex(4))
             })
         );
+    }
+
+    #[test]
+    fn dup1() {
+        let mut stack = Stack::new();
+        stack.push(StackElement {
+            value: Hex(1),
+            origin: Hex(0),
+            size: 1,
+        });
+        let input = Instruction {
+            args: Vec::new(),
+            opcode: opcodes().get(&OpCodes::DUP1).unwrap().clone(),
+            index: Hex(2),
+        };
+        let mut pc = Hex(0);
+        let mut memory = Memory::new();
+        input.parse(&mut stack, &mut pc, &mut memory).unwrap();
+        assert_eq!(stack.len(), 2);
+        assert_eq!(stack.get(0), stack.get(1));
+    }
+
+    #[test]
+    #[should_panic]
+    fn dup1_empty_stack() {
+        let mut stack = Stack::new();
+        let input = Instruction {
+            args: Vec::new(),
+            opcode: opcodes().get(&OpCodes::DUP1).unwrap().clone(),
+            index: Hex(2),
+        };
+        let mut pc = Hex(0);
+        let mut memory = Memory::new();
+        assert!(input.parse(&mut stack, &mut pc, &mut memory).is_err());
+    }
+    #[test]
+    fn dup2() {
+        let mut stack = Stack::new();
+        stack.push(StackElement {
+            value: Hex(2),
+            origin: Hex(1),
+            size: 1,
+        });
+        stack.push(StackElement {
+            value: Hex(1),
+            origin: Hex(0),
+            size: 1,
+        });
+        let input = Instruction {
+            args: Vec::new(),
+            opcode: opcodes().get(&OpCodes::DUP2).unwrap().clone(),
+            index: Hex(2),
+        };
+        let mut pc = Hex(0);
+        let mut memory = Memory::new();
+        input.parse(&mut stack, &mut pc, &mut memory).unwrap();
+        assert_eq!(stack.len(), 3);
+        assert_eq!(stack.get(0), stack.get(2));
     }
 }
