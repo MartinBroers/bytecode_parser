@@ -23,6 +23,31 @@ impl Memory {
         &self.elements
     }
 
+    pub fn mload(&mut self, offset: Hex) -> MemoryElement {
+        let offset = offset.0 as usize;
+        if self.elements.len() < (offset + 32) {
+            for _ in self.elements.len()..(offset + 32) {
+                self.elements.push(MemoryElement {
+                    value: Hex(0),
+                    origin: None,
+                });
+            }
+        }
+        let mut result: MemoryElement = MemoryElement {
+            value: Hex(0),
+            origin: None,
+        };
+        for i in offset..(offset + 32) {
+            let element = self.elements.get(i).unwrap();
+            result.value = result.value << Hex(8);
+            result.value += element.value;
+            if let Some(origin) = element.origin {
+                result.origin = Some(origin);
+            }
+        }
+        result
+    }
+
     pub fn mstore(&mut self, element: StackElement, offset: Hex, index: Hex) {
         let offset = offset.0 as usize;
         // ensure the memory array is lengthy enough.

@@ -160,6 +160,20 @@ impl Instruction {
         memory.mstore(value, offset.value, self.index);
         Ok(OpCodeResult::Ok)
     }
+    fn mload(&self, stack: &mut Stack, memory: &mut Memory) -> Result<OpCodeResult, ()> {
+        let offset = stack.pop().ok_or(())?;
+        let result = memory.mload(offset.value);
+        stack.push(StackElement {
+            value: result.value,
+            origin: if let Some(origin) = result.origin {
+                origin
+            } else {
+                self.index
+            },
+            size: 32,
+        });
+        Ok(OpCodeResult::Ok)
+    }
 
     fn calldataload(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
         if let Some(calldata) = unsafe { &CALLDATA } {
@@ -307,7 +321,7 @@ impl Instruction {
             OpCodes::LOG3 => todo!(),
             OpCodes::LOG4 => todo!(),
             OpCodes::LT => self.lt(stack),
-            OpCodes::MLOAD => todo!(),
+            OpCodes::MLOAD => self.mload(stack, memory),
             OpCodes::MOD => todo!(),
             OpCodes::MSIZE => todo!(),
             OpCodes::MSTORE => self.mstore(stack, memory),
