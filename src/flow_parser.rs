@@ -38,8 +38,16 @@ impl FlowParser<'_> {
             debug!("{:?}", instruction);
         }
         let new_step = self.instruction_sets.get(&(Hex(0))).unwrap().clone();
-        debug!("first step: {:?}", new_step);
         let mut memory = Memory::new();
+        let new_step = parse_instruction_set(
+            Hex(0),
+            &self.instructions,
+            None,
+            Some(new_step.end),
+            &mut memory,
+        )
+        .unwrap();
+        debug!("first step: {:?}", new_step);
         for jump in new_step.jumps {
             // Update the stack for this section
             let instruction = parse_instruction_set(
@@ -139,33 +147,18 @@ impl FlowParser<'_> {
         result
     }
 
-    //fn parse_jump(
-    //    &self,
-    //    new_step: &InstructionSet,
-    //    flow: &mut Flow,
-    //    jump: &JumpInstruction,
-    //    previous_stack: Vec<Hex>,
-    //) {
-    //    // Update the stack for this section
-    //    let instruction =
-    //        parse_instruction_set(new_step.start, &self.instructions, Some(previous_stack))
-    //            .unwrap();
-    //    let parsed_instruction_set = ParsedInstructionSet {
-    //        start: instruction.start,
-    //        end: instruction.end,
-    //        target: jump.target,
-    //        jump: Some(jump.clone()),
-    //        stack: instruction.stack,
-    //    };
-    //    flow.add_step(parsed_instruction_set);
-    //}
+    pub fn flows(&self) -> &Vec<Flow> {
+        &self.flows
+    }
 }
 #[cfg(test)]
 mod tests {
     use crate::{
         flow_parser::FlowParser,
+        hex::Hex,
         opcode::OpCodes::{JUMP, JUMPDEST, JUMPI, PUSH1, STOP},
         parser::Parser,
+        stack::StackElement,
     };
     use test_log::test;
 
@@ -199,6 +192,27 @@ mod tests {
     }
 
     #[test]
+    fn break_into_simple_instruction_sections() {
+        let input: Vec<u32> = Vec::from([
+            PUSH1 as u32,
+            0x3,             // 0x0, 0x1 argument for PUSH1
+            JUMP as u32,     // 0x2
+            JUMPDEST as u32, // 0x3
+            STOP as u32,     // 0x4
+        ]);
+
+        let parser = Parser::new(input);
+        let instruction_sets = parser.get_instruction_sets();
+        let instructions = parser.get_instructions();
+        // we have two sections; one before the jump and one after the jump. From JUMPDEST to STOP.
+        assert_eq!(instruction_sets.len(), 2);
+        let mut flow_parser = FlowParser::new(instruction_sets, instructions);
+        flow_parser.parse_flows();
+
+        let flow = flow_parser.flows;
+        assert_eq!(flow.len(), 1);
+    }
+    #[test]
     fn parse_conditional_flow() {
         let input = Vec::from([
             PUSH1 as u32,
@@ -219,9 +233,9 @@ mod tests {
             STOP as u32,     //0xf
         ]);
         let parser = Parser::new(input);
-        let instruction_sets = parser.get_instruction_sets();
         let instructions = parser.get_instructions();
-        assert_eq!(instruction_sets.len(), 4);
+        let instruction_sets = parser.get_instruction_sets();
+        assert_eq!(instruction_sets.len(), 4, "{:?}", instruction_sets);
         let mut flow_parser = FlowParser::new(instruction_sets, instructions);
         flow_parser.parse_flows();
         let flows = flow_parser.flows;

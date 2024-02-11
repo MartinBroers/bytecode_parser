@@ -1,9 +1,9 @@
-use log::info;
+use log::{info, warn};
 use std::collections::HashMap; // Use log crate when building application
 
 use crate::{
     hex::Hex,
-    instruction::{Instruction, InstructionSet},
+    instruction::{Instruction, InstructionSet, JumpInstruction, JumpType},
     memory::Memory,
     opcode::{self, opcodes},
     stack::Stack,
@@ -80,14 +80,66 @@ fn parse_instruction_sets(
     let mut stack_pointer = 0x0.into();
     // Nothing happens with this memory, as it is more relevant to the flow parser.
     let mut memory = Memory::new();
-    while let Some(instruction_set) =
-        parse_instruction_set(stack_pointer, &instructions, None, None, &mut memory)
-    {
+    while let Some(instruction_set) = create_instruction_set(stack_pointer, &instructions) {
         info!("instruction_set: {:?}", instruction_set);
         instruction_sets.insert(stack_pointer, instruction_set.clone());
         stack_pointer = instruction_set.end + Hex(1);
     }
     instruction_sets
+}
+
+fn create_instruction_set(
+    stack_pointer: Hex,
+    instructions: &HashMap<Hex, Instruction>,
+) -> Option<InstructionSet> {
+    let mut instructions_section: InstructionSet = InstructionSet {
+        start: stack_pointer,
+        end: stack_pointer,
+        jumps: Vec::new(),
+        stack: Stack::new(),
+    };
+    let stack_pointer_in = stack_pointer.clone();
+    let mut stack_pointer = stack_pointer;
+    while let Some(instruction) = instructions.get(&stack_pointer) {
+        info!("parsing {:?}: {:?}", stack_pointer, instruction);
+        match instruction.opcode.code {
+            opcode::OpCodes::JUMPI => instructions_section.jumps.push(JumpInstruction {
+                instruction: instruction.clone(),
+                jump_type: JumpType::Conditional,
+                target: None,
+                source: instruction.index,
+                condition: None,
+            }),
+            opcode::OpCodes::JUMP => {
+                instructions_section.jumps.push(JumpInstruction {
+                    instruction: instruction.clone(),
+                    jump_type: JumpType::Unconditional,
+                    target: None,
+                    source: instruction.index,
+                    condition: None,
+                });
+                break;
+            }
+            opcode::OpCodes::RETURN
+            | opcode::OpCodes::STOP
+            | opcode::OpCodes::REVERT
+            | opcode::OpCodes::INVALID
+            | opcode::OpCodes::SELFDESTRUCT => {
+                break;
+            }
+            _ => {
+                stack_pointer += Hex(instruction.opcode.input_arguments as u64);
+            }
+        }
+        stack_pointer += 1.into();
+    }
+    if stack_pointer != stack_pointer_in {
+        instructions_section.stack = Stack::new();
+        instructions_section.end = stack_pointer;
+        Some(instructions_section)
+    } else {
+        None
+    }
 }
 
 pub fn parse_instruction_set(
@@ -107,8 +159,8 @@ pub fn parse_instruction_set(
     let mut stack: Stack = input_stack.unwrap_or(Stack::new());
     let mut stack_pointer = stack_pointer;
     while let Some(instruction) = instructions.get(&stack_pointer) {
-        println!(
-            "parsing {:?}, instruction {:?}, stack: {:?} ",
+        info!(
+            "parsing {:?} {:?}, stack: {:?} ",
             stack_pointer, instruction, stack
         );
         if let Some(end_at) = end_at {
@@ -133,33 +185,8 @@ pub fn parse_instruction_set(
                 opcode::OpCodeResult::Ok => (),
             }
         } else {
-            println!("Could not parse instruction: {:?}", instruction);
+            warn!("Could not parse instruction: {:?}", instruction);
         }
-        //    opcode::JUMPI => {
-        //        let jumpdest = stack.pop();
-        //        let _condition = stack.pop();
-        //        let mut label: String = "JUMPI_".to_string();
-        //        label.push_str(format!("{:?}", jumpdest).as_str());
-        //        instructions_section.push(ParsedInstruction {
-        //            instruction: instruction.clone(),
-        //            used_arg: jumpdest,
-        //        });
-        //        instructions_section.jumps.push(JumpInstruction {
-        //            instruction: instruction.clone(),
-        //            target: jumpdest,
-        //            source: instructions_section.start,
-        //            jump_type: JumpType::Conditional,
-        //        });
-        //        //let mut stack = stack.clone();
-        //        //println!("Parsing JUMPI");
-        //        //self.parse_instruction_section(
-        //        //    jumpdest,
-        //        //    instructions_section,
-        //        //    labeled_instructions,
-        //        //    &mut stack,
-        //        //);
-        //        //println!("Done");
-        //    }
         stack_pointer += 1.into();
     }
     if stack_pointer != stack_pointer_in {
@@ -195,7 +222,6 @@ fn bytecode_to_instructions(raw_bytecode: Vec<u32>) -> HashMap<Hex, Instruction>
                 opcode: opcode.clone(),
                 index: index.into(),
             };
-            //println!("{:04x}\t{:?}", index, instruction);
             instructions.insert(index.into(), instruction);
         } else {
             panic!("Found unknown instruction: {:x}, aborting", instruction);
@@ -206,13 +232,13 @@ fn bytecode_to_instructions(raw_bytecode: Vec<u32>) -> HashMap<Hex, Instruction>
 
 #[cfg(test)]
 mod tests {
-    use log::{debug, info};
-    use std::collections::BTreeMap;
     use test_log::test;
 
     use crate::{
         hex::Hex,
+        memory::Memory,
         opcode::OpCodes::{ADD, JUMP, JUMPDEST, JUMPI, POP, PUSH1, STOP},
+        parser::parse_instruction_set,
         stack::StackElement,
     };
 
@@ -240,38 +266,6 @@ mod tests {
         let _ = bytecode_to_instructions([0x60].to_vec());
     }
     #[test]
-    fn break_into_simple_instruction_sections() {
-        let input: Vec<u32> = Vec::from([
-            PUSH1 as u32,
-            0x3,             // 0x0, 0x1 argument for PUSH1
-            JUMP as u32,     // 0x2
-            JUMPDEST as u32, // 0x3
-            STOP as u32,     // 0x4
-        ]);
-
-        let parser = Parser::new(input);
-        let instruction_sections = parser.get_instruction_sets();
-
-        // we have two sections; one before the jump and one after the jump. From JUMPDEST to STOP.
-        assert_eq!(instruction_sections.len(), 2);
-        let jump_target = &instruction_sections
-            .get(&Hex(0x0))
-            .unwrap()
-            .jumps
-            .first()
-            .unwrap()
-            .target;
-        let jump_dest = instruction_sections.get(&Hex(0x3)).unwrap().start;
-        assert_eq!(
-            *jump_target,
-            Some(StackElement {
-                value: jump_dest,
-                origin: Hex(0),
-                size: 1,
-            })
-        );
-    }
-    #[test]
     fn instructions_between_jump_target_push_and_jump_instruction() {
         let input = Vec::from([
             PUSH1 as u32,
@@ -290,18 +284,28 @@ mod tests {
         let parser = Parser::new(input);
         let instruction_sections = parser.get_instruction_sets();
         assert_eq!(instruction_sections.len(), 2);
-        println!("instruction_sections: {:?}", instruction_sections);
-        let jump_target = &instruction_sections
-            .get(&Hex(0x0))
-            .unwrap()
-            .jumps
-            .first()
-            .unwrap()
-            .target;
-        let jump_dest = instruction_sections.get(&Hex(0x9)).unwrap().start;
+        let mut memory = Memory::new();
+        let first_instruction_section = parse_instruction_set(
+            Hex(0),
+            parser.get_instructions(),
+            None,
+            Some(instruction_sections.get(&Hex(0)).unwrap().end),
+            &mut memory,
+        )
+        .unwrap();
+        let target_instruction_section = parse_instruction_set(
+            Hex(9),
+            parser.get_instructions(),
+            None,
+            Some(instruction_sections.get(&Hex(9)).unwrap().end),
+            &mut memory,
+        )
+        .unwrap();
+        let jump_target = &first_instruction_section.jumps.first().unwrap().target;
+        let jump_dest = target_instruction_section.start;
         assert_eq!(
-            *jump_target,
-            Some(StackElement {
+            jump_target,
+            &Some(StackElement {
                 value: jump_dest,
                 origin: Hex(0),
                 size: 1,
@@ -341,31 +345,6 @@ mod tests {
             result
         };
         assert_eq!(jumps.len(), 2);
-
-        println!("jumps: {:?}", jumps);
-        assert_ne!(jumps.iter().find(|jump| jump.source == Hex(0)), None);
-        assert_ne!(
-            jumps
-                .iter()
-                .find(|jump| if let Some(target) = &jump.target {
-                    Some(target.value)
-                } else {
-                    None
-                } == Some(Hex(3))),
-            None
-        );
-
-        assert_ne!(jumps.iter().find(|jump| jump.source == Hex(3)), None);
-        assert_ne!(
-            jumps
-                .iter()
-                .find(|jump| if let Some(target) = &jump.target {
-                    Some(target.value)
-                } else {
-                    None
-                } == Some(Hex(7))),
-            None
-        );
     }
 
     // - Jump value pushed in different section

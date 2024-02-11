@@ -142,6 +142,9 @@ fn main() -> Result<(), std::io::Error> {
     let parser = BytecodeParser::new(bytecode);
     let mut flow_parser = FlowParser::new(parser.get_instruction_sets(), parser.get_instructions());
     flow_parser.parse_flows();
+    for flow in flow_parser.flows() {
+        flow.print();
+    }
 
     Ok(())
 }

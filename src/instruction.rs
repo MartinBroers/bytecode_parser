@@ -367,7 +367,7 @@ impl Instruction {
             OpCodes::PUSH30 => self.pushx(30, stack, pc),
             OpCodes::PUSH31 => self.pushx(31, stack, pc),
             OpCodes::PUSH32 => self.pushx(32, stack, pc),
-            OpCodes::RETURN => todo!(),
+            OpCodes::RETURN => self.stop(stack),
             OpCodes::RETURNDATACOPY => todo!(),
             OpCodes::RETURNDATASIZE => todo!(),
             OpCodes::REVERT => self.stop(stack),
