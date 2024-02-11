@@ -43,6 +43,20 @@ impl Instruction {
         });
         Ok(OpCodeResult::Ok)
     }
+    fn slt(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
+        let right = stack.pop().ok_or(())?;
+        let left = stack.pop().ok_or(())?;
+        stack.push(StackElement {
+            value: if left.value < right.value {
+                Hex(1)
+            } else {
+                Hex(0)
+            },
+            origin: self.index,
+            size: 1,
+        });
+        Ok(OpCodeResult::Ok)
+    }
     fn mul(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
         let left = stack.pop().ok_or(())?;
         let right = stack.pop().ok_or(())?;
@@ -381,7 +395,7 @@ impl Instruction {
             OpCodes::SHR => self.shr(stack),
             OpCodes::SIGNEXTEND => todo!(),
             OpCodes::SLOAD => todo!(),
-            OpCodes::SLT => todo!(),
+            OpCodes::SLT => self.slt(stack),
             OpCodes::SMOD => todo!(),
             OpCodes::SSTORE => todo!(),
             OpCodes::STATICCALL => todo!(),
