@@ -267,7 +267,7 @@ impl Instruction {
             OpCodes::RETURN => todo!(),
             OpCodes::RETURNDATACOPY => todo!(),
             OpCodes::RETURNDATASIZE => todo!(),
-            OpCodes::REVERT => todo!(),
+            OpCodes::REVERT => self.stop(stack),
             OpCodes::SAR => todo!(),
             OpCodes::SDIV => todo!(),
             OpCodes::SELFBALANCE => todo!(),
