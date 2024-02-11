@@ -74,7 +74,6 @@ impl Instruction {
     fn pushx(&self, num_push: usize, stack: &mut Stack, pc: &mut Hex) -> Result<OpCodeResult, ()> {
         *pc += Hex(1);
         assert!(self.args.len() == num_push);
-        warn!("pushx: num_push: {:?}, self: {:?}", num_push, self);
         let mut value = Hex(0);
         for element in &self.args {
             value = value << Hex(8);
@@ -97,6 +96,23 @@ impl Instruction {
         } else {
             Err(())
         }
+    }
+    fn shr(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
+        let shift = stack.pop().ok_or(())?;
+        let value = stack.pop().ok_or(())?;
+
+        info!(
+            "executing shr, shift={}, value={}",
+            shift.value, value.value
+        );
+
+        stack.push(StackElement {
+            value: value.value >> shift.value,
+            origin: self.index,
+            size: 1,
+        });
+
+        Ok(OpCodeResult::Ok)
     }
     fn jumpdest(&self) -> Result<OpCodeResult, ()> {
         Ok(OpCodeResult::Ok)
@@ -322,7 +338,7 @@ impl Instruction {
             OpCodes::SGT => todo!(),
             OpCodes::SHA3 => todo!(),
             OpCodes::SHL => todo!(),
-            OpCodes::SHR => todo!(),
+            OpCodes::SHR => self.shr(stack),
             OpCodes::SIGNEXTEND => todo!(),
             OpCodes::SLOAD => todo!(),
             OpCodes::SLT => todo!(),
@@ -669,5 +685,53 @@ mod tests {
         input.parse(&mut stack, &mut pc, &mut memory).unwrap();
         assert_eq!(stack.len(), 3);
         assert_eq!(stack.get(0), stack.get(2));
+    }
+    #[test]
+    fn shr() {
+        let mut stack = Stack::new();
+        stack.push(StackElement {
+            value: Hex(0xf),
+            origin: Hex(1),
+            size: 1,
+        });
+        stack.push(StackElement {
+            value: Hex(1),
+            origin: Hex(0),
+            size: 1,
+        });
+        let input = Instruction {
+            args: Vec::new(),
+            opcode: opcodes().get(&OpCodes::SHR).unwrap().clone(),
+            index: Hex(2),
+        };
+        let mut pc = Hex(0);
+        let mut memory = Memory::new();
+        input.parse(&mut stack, &mut pc, &mut memory).unwrap();
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.get(0).unwrap().value, Hex(0x7));
+    }
+    #[test]
+    fn shr_overflow() {
+        let mut stack = Stack::new();
+        stack.push(StackElement {
+            value: Hex(0),
+            origin: Hex(0),
+            size: 1,
+        });
+        stack.push(StackElement {
+            value: Hex(0xff),
+            origin: Hex(0x1),
+            size: 1,
+        });
+        let input = Instruction {
+            args: Vec::new(),
+            opcode: opcodes().get(&OpCodes::SHR).unwrap().clone(),
+            index: Hex(2),
+        };
+        let mut pc = Hex(0);
+        let mut memory = Memory::new();
+        input.parse(&mut stack, &mut pc, &mut memory).unwrap();
+        assert_eq!(stack.len(), 1);
+        assert_eq!(stack.get(0).unwrap().value, Hex(0x0));
     }
 }

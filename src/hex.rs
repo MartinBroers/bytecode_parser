@@ -1,4 +1,5 @@
 use core::fmt;
+use std::num::Wrapping;
 use std::{
     num::ParseIntError,
     ops::{Add, AddAssign, BitAnd, Mul, Rem, Shl, Shr, Sub},
@@ -28,17 +29,17 @@ impl Mul for Hex {
 impl Shl<Hex> for Hex {
     type Output = Self;
 
-    fn shl(self, rhs: Hex) -> Self::Output {
-        let Self(lhs) = self;
-        Self(lhs << rhs.0)
+    fn shl(self, shift: Hex) -> Self::Output {
+        let wrapped_self = Wrapping(self.0);
+        Self(wrapped_self.shl(shift.0 as usize).0)
     }
 }
 impl Shr<Hex> for Hex {
     type Output = Self;
 
-    fn shr(self, rhs: Hex) -> Self::Output {
-        let Self(lhs) = self;
-        Self(lhs >> rhs.0)
+    fn shr(self, shift: Hex) -> Self::Output {
+        let wrapped_self = Wrapping(self.0);
+        Self(wrapped_self.shr(shift.0 as usize).0)
     }
 }
 
