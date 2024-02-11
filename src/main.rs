@@ -11,17 +11,17 @@ mod utils;
 use clap::Parser;
 use flow_parser::FlowParser;
 use hex::Hex;
-use log::{error, info, warn};
+use log::{error, warn};
 use parser::Parser as BytecodeParser;
 use stack::StackElement;
 use std::{
-    env,
     fs::File,
-    io::{self, stdin, BufRead, BufReader, Error, ErrorKind, Read},
+    io::{self, BufRead, BufReader, Error, ErrorKind},
     path::Path,
 };
 
 pub static mut CALLVALUE: Option<StackElement> = None;
+pub static mut CALLDATA: Option<StackElement> = None;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -29,10 +29,12 @@ struct Args {
     input: Option<String>,
 
     #[arg(long)]
-    callvalue: Option<String>,
+    filename: Option<String>,
 
     #[arg(long)]
-    filename: Option<String>,
+    callvalue: Option<String>,
+    #[arg(long)]
+    calldata: Option<String>,
 }
 
 fn read_bytecode(input: String) -> Option<Vec<u32>> {
@@ -70,6 +72,20 @@ fn parse_args(args: &Args) -> Result<(), std::io::Error> {
         };
         unsafe {
             CALLVALUE = Some(StackElement {
+                value,
+                origin: Hex(0),
+                size: (format!("{:x}", value.0).len() + 1) / 2 as usize,
+            });
+        }
+    }
+
+    if let Some(calldata) = &args.calldata {
+        let value: Hex = match Hex::try_from(calldata) {
+            Ok(v) => v,
+            Err(e) => return Err(Error::new(ErrorKind::InvalidInput, e)),
+        };
+        unsafe {
+            CALLDATA = Some(StackElement {
                 value,
                 origin: Hex(0),
                 size: (format!("{:x}", value.0).len() + 1) / 2 as usize,
