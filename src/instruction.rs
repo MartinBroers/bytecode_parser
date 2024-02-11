@@ -33,6 +33,16 @@ impl Instruction {
         });
         Ok(OpCodeResult::Ok)
     }
+    fn sub(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
+        let right = stack.pop().ok_or(())?;
+        let left = stack.pop().ok_or(())?;
+        stack.push(StackElement {
+            value: left.value - right.value,
+            origin: self.index,
+            size: 1,
+        });
+        Ok(OpCodeResult::Ok)
+    }
     fn mul(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
         let left = stack.pop().ok_or(())?;
         let right = stack.pop().ok_or(())?;
@@ -199,6 +209,21 @@ impl Instruction {
         }
         Ok(OpCodeResult::Ok)
     }
+    fn eq(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
+        let left = stack.pop().ok_or(())?;
+        let right = stack.pop().ok_or(())?;
+
+        stack.push(StackElement {
+            value: if left.value == right.value {
+                Hex(1)
+            } else {
+                Hex(0)
+            },
+            origin: self.index,
+            size: 1,
+        });
+        Ok(OpCodeResult::Ok)
+    }
     fn is_zero(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
         let value = stack.pop().ok_or(())?;
         stack.push(StackElement {
@@ -261,7 +286,7 @@ impl Instruction {
             OpCodes::DUP15 => self.dupx(15, stack),
             OpCodes::DUP16 => self.dupx(16, stack),
             OpCodes::EOFMAGIC => todo!(),
-            OpCodes::EQ => todo!(),
+            OpCodes::EQ => self.eq(stack),
             OpCodes::EXP => todo!(),
             OpCodes::EXTCODECOPY => todo!(),
             OpCodes::EXTCODEHASH => todo!(),
@@ -346,23 +371,23 @@ impl Instruction {
             OpCodes::SSTORE => todo!(),
             OpCodes::STATICCALL => todo!(),
             OpCodes::STOP => self.stop(stack),
-            OpCodes::SUB => todo!(),
+            OpCodes::SUB => self.sub(stack),
             OpCodes::SWAP1 => self.swapx(1, stack),
-            OpCodes::SWAP2 => todo!(),
-            OpCodes::SWAP3 => todo!(),
-            OpCodes::SWAP4 => todo!(),
-            OpCodes::SWAP5 => todo!(),
-            OpCodes::SWAP6 => todo!(),
-            OpCodes::SWAP7 => todo!(),
-            OpCodes::SWAP8 => todo!(),
-            OpCodes::SWAP9 => todo!(),
-            OpCodes::SWAP10 => todo!(),
-            OpCodes::SWAP11 => todo!(),
-            OpCodes::SWAP12 => todo!(),
-            OpCodes::SWAP13 => todo!(),
-            OpCodes::SWAP14 => todo!(),
-            OpCodes::SWAP15 => todo!(),
-            OpCodes::SWAP16 => todo!(),
+            OpCodes::SWAP2 => self.swapx(2, stack),
+            OpCodes::SWAP3 => self.swapx(3, stack),
+            OpCodes::SWAP4 => self.swapx(4, stack),
+            OpCodes::SWAP5 => self.swapx(5, stack),
+            OpCodes::SWAP6 => self.swapx(6, stack),
+            OpCodes::SWAP7 => self.swapx(7, stack),
+            OpCodes::SWAP8 => self.swapx(8, stack),
+            OpCodes::SWAP9 => self.swapx(9, stack),
+            OpCodes::SWAP10 => self.swapx(10, stack),
+            OpCodes::SWAP11 => self.swapx(11, stack),
+            OpCodes::SWAP12 => self.swapx(12, stack),
+            OpCodes::SWAP13 => self.swapx(13, stack),
+            OpCodes::SWAP14 => self.swapx(14, stack),
+            OpCodes::SWAP15 => self.swapx(15, stack),
+            OpCodes::SWAP16 => self.swapx(16, stack),
             OpCodes::TIMESTAMP => todo!(),
             OpCodes::XOR => todo!(),
         }

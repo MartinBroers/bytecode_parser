@@ -148,8 +148,6 @@ fn main() -> Result<(), std::io::Error> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-
     use crate::{hex::Hex, CALLVALUE};
 
     fn init() {

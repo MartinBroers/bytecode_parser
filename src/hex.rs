@@ -56,8 +56,8 @@ impl Sub for Hex {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let Self(lhs) = self;
-        Self(lhs - rhs.0)
+        let wrapped_self = Wrapping(self.0);
+        Self(wrapped_self.sub(Wrapping(rhs.0)).0)
     }
 }
 

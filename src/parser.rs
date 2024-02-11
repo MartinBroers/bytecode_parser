@@ -3,7 +3,7 @@ use std::collections::HashMap; // Use log crate when building application
 
 use crate::{
     hex::Hex,
-    instruction::{Instruction, InstructionSet, JumpInstruction, ParsedInstruction},
+    instruction::{Instruction, InstructionSet},
     memory::Memory,
     opcode::{self, opcodes},
     stack::Stack,
@@ -249,6 +249,10 @@ fn bytecode_to_instructions(raw_bytecode: Vec<u32>) -> HashMap<Hex, Instruction>
 
 #[cfg(test)]
 mod tests {
+    use log::{debug, info};
+    use std::collections::BTreeMap;
+    use test_log::test;
+
     use crate::{
         hex::Hex,
         opcode::OpCodes::{ADD, JUMP, JUMPDEST, JUMPI, POP, PUSH1, STOP},
