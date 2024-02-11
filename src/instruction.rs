@@ -1,5 +1,5 @@
 use core::fmt;
-use log::{info, warn};
+use log::{debug, info};
 
 use crate::{
     hex::Hex,
@@ -98,6 +98,7 @@ impl Instruction {
     }
 
     fn dupx(&self, num_dup: usize, stack: &mut Stack) -> Result<OpCodeResult, ()> {
+        debug!("dupx: DUP{}, stack: {:?}", num_dup, stack);
         let dup = stack.get(stack.len() - num_dup);
         assert!(dup.is_some());
         if let Some(value) = dup {

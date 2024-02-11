@@ -5,7 +5,7 @@ use std::{
     ops::{Add, AddAssign, BitAnd, Mul, Rem, Shl, Shr, Sub},
 };
 
-#[derive(Clone, Default, PartialEq, Copy, PartialOrd, Hash, Eq)]
+#[derive(Clone, Default, PartialEq, Copy, PartialOrd, Hash, Eq, Ord)]
 pub struct Hex(pub u64);
 impl AddAssign for Hex {
     fn add_assign(&mut self, rhs: Self) {

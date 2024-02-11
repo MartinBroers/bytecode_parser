@@ -107,7 +107,10 @@ pub fn parse_instruction_set(
     let mut stack: Stack = input_stack.unwrap_or(Stack::new());
     let mut stack_pointer = stack_pointer;
     while let Some(instruction) = instructions.get(&stack_pointer) {
-        println!("parsing {:?}, stack: {:?} ", stack_pointer, stack);
+        println!(
+            "parsing {:?}, instruction {:?}, stack: {:?} ",
+            stack_pointer, instruction, stack
+        );
         if let Some(end_at) = end_at {
             if stack_pointer > end_at {
                 break;

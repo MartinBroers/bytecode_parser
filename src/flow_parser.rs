@@ -31,7 +31,14 @@ impl FlowParser<'_> {
 
     // Iterate over all instruction sets and reconstruct all jumps.
     pub fn parse_flows(&mut self) {
+        info!("parsing flows");
+        debug!("instruction_sets: {:?}", self.instruction_sets);
+        let sorted_instructions: BTreeMap<_, _> = self.instructions.clone().into_iter().collect();
+        for instruction in sorted_instructions {
+            debug!("{:?}", instruction);
+        }
         let new_step = self.instruction_sets.get(&(Hex(0))).unwrap().clone();
+        debug!("first step: {:?}", new_step);
         let mut memory = Memory::new();
         for jump in new_step.jumps {
             // Update the stack for this section
