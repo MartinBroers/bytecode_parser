@@ -136,7 +136,19 @@ impl Instruction {
         }
         Ok(OpCodeResult::Ok)
     }
-
+    fn is_zero(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
+        let value = stack.pop().ok_or(())?;
+        stack.push(StackElement {
+            value: if value.value == Hex(0) {
+                Hex(1)
+            } else {
+                Hex(0)
+            },
+            origin: self.index,
+            size: 1,
+        });
+        Ok(OpCodeResult::Ok)
+    }
     // Parses the opcode and returns the stack
     pub fn parse(
         &self,
@@ -196,7 +208,7 @@ impl Instruction {
             OpCodes::GASPRICE => todo!(),
             OpCodes::GT => todo!(),
             OpCodes::INVALID => todo!(),
-            OpCodes::ISZERO => todo!(),
+            OpCodes::ISZERO => self.is_zero(stack),
             OpCodes::JUMP => self.jump(stack),
             OpCodes::JUMPDEST => self.jumpdest(),
             OpCodes::JUMPI => self.jumpi(stack),
