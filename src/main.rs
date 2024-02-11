@@ -216,13 +216,14 @@ b92915050565b60006101da826100df565b91506101e5836100df565b9250\
 
     #[test]
     fn test_input_callarg() {
-        let input = "123";
+        let callvalue = "123";
         let args = super::Args {
             input: None,
-            callvalue: Some(input.to_string()),
+            callvalue: Some(callvalue.to_string()),
+            calldata: None,
             filename: None,
         };
-        super::parse_args(&args);
+        let _ = super::parse_args(&args);
         let callvalue = unsafe { CALLVALUE.clone() }.unwrap();
 
         assert_eq!(callvalue.value, Hex(0x7b));
@@ -232,9 +233,10 @@ b92915050565b60006101da826100df565b91506101e5836100df565b9250\
         let args = super::Args {
             input: None,
             callvalue: Some(input.to_string()),
+            calldata: None,
             filename: None,
         };
-        super::parse_args(&args);
+        let _ = super::parse_args(&args);
         let callvalue = unsafe { CALLVALUE.clone() }.unwrap();
 
         assert_eq!(callvalue.value, Hex(0x0100));
@@ -244,9 +246,10 @@ b92915050565b60006101da826100df565b91506101e5836100df565b9250\
         let args = super::Args {
             input: None,
             callvalue: Some(input.to_string()),
+            calldata: None,
             filename: None,
         };
-        super::parse_args(&args);
+        let _ = super::parse_args(&args);
         let callvalue = unsafe { CALLVALUE.clone() }.unwrap();
 
         assert_eq!(callvalue.value, Hex(0x0100));
