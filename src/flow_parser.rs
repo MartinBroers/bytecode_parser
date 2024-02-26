@@ -1,29 +1,24 @@
 use std::collections::{BTreeMap, HashMap};
 
-use log::{debug, info};
+use log::{debug, error, info, warn};
 
 use crate::{
     flow::{Flow, ParsedInstructionSet},
     hex::Hex,
     instruction::{Instruction, InstructionSet, JumpType},
     memory::Memory,
+    opcode::OpCodes,
     parser::parse_instruction_set,
 };
 
 pub struct FlowParser<'a> {
-    instruction_sets: HashMap<Hex, InstructionSet>,
     instructions: &'a HashMap<Hex, Instruction>,
-
     flows: Vec<Flow>,
 }
 
 impl FlowParser<'_> {
-    pub fn new(
-        instruction_sets: HashMap<Hex, InstructionSet>,
-        instructions: &HashMap<Hex, Instruction>,
-    ) -> FlowParser {
+    pub fn new(instructions: &HashMap<Hex, Instruction>) -> FlowParser {
         FlowParser {
-            instruction_sets,
             instructions,
             flows: Vec::new(),
         }
@@ -32,118 +27,79 @@ impl FlowParser<'_> {
     // Iterate over all instruction sets and reconstruct all jumps.
     pub fn parse_flows(&mut self) {
         info!("parsing flows");
-        debug!("instruction_sets: {:?}", self.instruction_sets);
         let sorted_instructions: BTreeMap<_, _> = self.instructions.clone().into_iter().collect();
         for instruction in sorted_instructions {
             debug!("{:?}", instruction);
         }
-        let new_step = self.instruction_sets.get(&(Hex(0))).unwrap().clone();
-        let mut memory = Memory::new();
-        let new_step = parse_instruction_set(
-            Hex(0),
-            &self.instructions,
-            None,
-            Some(new_step.end),
-            &mut memory,
-        )
-        .unwrap();
-        debug!("first step: {:?}", new_step);
-        for jump in new_step.jumps {
+        let memory = Memory::new();
+        let steps =
+            parse_instruction_set(Hex::from(0), &self.instructions, None, memory.clone(), None);
+        for step in &steps {
+            debug!("first step: {:x}", step);
             // Update the stack for this section
-            let instruction = parse_instruction_set(
-                new_step.start,
-                &self.instructions,
-                None,
-                Some(jump.instruction.index),
-                &mut memory,
-            )
-            .unwrap();
-            println!("instruction Hex(0): {:?}", instruction);
-            println!("Parsing jump {:?}", jump);
-            let parsed_instruction_set = ParsedInstructionSet {
-                start: instruction.start,
-                end: instruction.end,
-                target: jump.target.clone(),
-                jump: Some(jump.clone()),
-                stack: instruction.stack.clone(),
-                memory: memory.clone(),
-            };
-            let flow = Flow::new(parsed_instruction_set);
+            println!("Parsing jump {:?}", step.jump);
+
+            let flow = Flow::new(step.clone());
             let flows = self.parse_next_step(flow);
             self.flows.extend(flows);
         }
-        println!("result: {:?}", self.flows);
     }
 
     fn parse_next_step(&self, flow: Flow) -> Vec<Flow> {
         let mut result = Vec::new();
         let mut flow = flow.clone();
-        println!("parse_jumps, flow={:?}", flow);
-        while let Some(last_step) = flow.get_last_step() {
-            println!(
+        if let Some(last_step) = flow.get_last_step() {
+            debug!(
             "Next step starts at {:?} with jump instruction {:?}. The added stack should be {:?}",
             last_step.target, last_step.jump, last_step.stack
         );
-            if let Some(target) = last_step.target {
-                if let Some(next_step) = self.instruction_sets.get(&target.value) {
-                    println!("Our next step starts at {0:?}", next_step.start);
-                    println!("Our old next step stack is {0:?}", next_step.stack);
-                    println!("{:?}", flow);
+            if let Some(ref target) = last_step.target {
+                if let Some(next_step) = self.instructions.get(&target.value) {
+                    warn!("Our next step starts at {0:?}", next_step.index);
+                    if next_step.opcode.code != OpCodes::JUMPDEST {
+                        flow.print();
+                        panic!("next_step does not start with JUMPDEST");
+                    }
+                    println!("{:?}", next_step);
+                    let targets = parse_instruction_set(
+                        next_step.index.clone(),
+                        &self.instructions,
+                        Some(last_step.stack.clone()),
+                        last_step.memory.clone(),
+                        None,
+                    );
                     // Now, we want to reparse the next step, so we can update its stack from the
                     // 'leftovers' from the last step.
                     // Now we need to append our flow with the new step. Clone the flow for every jump
                     // found in the new_step.
-                    if next_step.jumps.len() == 0 {
-                        break;
-                    }
-                    for jump in &next_step.jumps {
-                        println!(
-                            "Parsing next step, starting from {:?}, ending at {:?}",
-                            next_step.start, jump.instruction.index
+                    if targets.len() == 0 {
+                        warn!(
+                            "Section {} does not have any defined targets.",
+                            next_step.index
                         );
-                        let mut memory = last_step.memory.clone();
-                        let next_step = parse_instruction_set(
-                            next_step.start,
-                            &self.instructions,
-                            Some(last_step.stack.clone()),
-                            Some(jump.instruction.index),
-                            &mut memory,
-                        )
-                        .unwrap();
-                        println!("Our new next step stack is {0:?}", next_step.stack);
-                        println!("next step.jumps = {:?}", next_step.jumps);
-                        println!("Current jump = {:?}", jump);
-                        let next_step_jump = next_step
-                            .jumps
-                            .iter()
-                            .find(|&j| j.instruction.index == jump.instruction.index)
-                            .unwrap();
-                        let new_parsed_instruction_set = ParsedInstructionSet {
-                            start: next_step.start,
-                            end: next_step.end,
-                            target: next_step_jump.target.clone(),
-                            jump: Some(next_step_jump.clone()),
-                            stack: next_step.stack.clone(),
-                            memory,
-                        };
-                        flow.add_step(new_parsed_instruction_set);
-                        if jump.jump_type == JumpType::Conditional {
-                            println!("Starting another flow because of a conditional step");
-                            result.extend(self.parse_next_step(flow.clone()));
+                    }
+                    for target in &targets {
+                        warn!("Parsing next step {:x}", target);
+                        flow.add_step(target.clone());
+                        if flow.len() < 25 {
+                            warn!("Starting new flow branch, starting from {}", target.start);
+                            result.append(&mut self.parse_next_step(flow.clone()));
+                        } else {
+                            error!("Flow got too long...");
                         }
                     }
                 } else {
-                    println!("Cannot parse next step; target does not exist as an individual instruction set.");
-                    break;
+                    flow.print();
+                    println!("{:?}", last_step);
+                    panic!("Cannot parse next step; {:?} does not exist as an individual instruction set.", target.value);
                 }
             } else {
-                println!("Reached end of flow, there is no target to jump to.");
-                break;
+                panic!("Reached end of flow, there is no target to jump to.");
             }
+        } else {
+            debug!("flow ends");
         }
-        flow.print();
         result.push(flow);
-        println!("parse_next_step result: {:?}", self.flows);
         result
     }
 
@@ -155,10 +111,11 @@ impl FlowParser<'_> {
 mod tests {
     use crate::{
         flow_parser::FlowParser,
-        hex::Hex,
-        opcode::OpCodes::{JUMP, JUMPDEST, JUMPI, PUSH1, STOP},
+        opcode::OpCodes::{
+            CALLVALUE as OPCODE_CALLVALUE, DUP1, ISZERO, JUMP, JUMPDEST, JUMPI, MSTORE, PUSH1,
+            PUSH2, REVERT, STOP,
+        },
         parser::Parser,
-        stack::StackElement,
     };
     use test_log::test;
 
@@ -185,7 +142,7 @@ mod tests {
         let instructions = parser.get_instructions();
         assert_eq!(instruction_sets.len(), 4);
 
-        let mut flow_parser = FlowParser::new(instruction_sets, instructions);
+        let mut flow_parser = FlowParser::new(instructions);
         flow_parser.parse_flows();
         let flows = flow_parser.flows;
         assert_eq!(flows.len(), 1);
@@ -206,7 +163,7 @@ mod tests {
         let instructions = parser.get_instructions();
         // we have two sections; one before the jump and one after the jump. From JUMPDEST to STOP.
         assert_eq!(instruction_sets.len(), 2);
-        let mut flow_parser = FlowParser::new(instruction_sets, instructions);
+        let mut flow_parser = FlowParser::new(instructions);
         flow_parser.parse_flows();
 
         let flow = flow_parser.flows;
@@ -236,13 +193,46 @@ mod tests {
         let instructions = parser.get_instructions();
         let instruction_sets = parser.get_instruction_sets();
         assert_eq!(instruction_sets.len(), 4, "{:?}", instruction_sets);
-        let mut flow_parser = FlowParser::new(instruction_sets, instructions);
+        let mut flow_parser = FlowParser::new(instructions);
         flow_parser.parse_flows();
         let flows = flow_parser.flows;
         println!("flows: {:?}", flows);
         for flow in &flows {
             println!("{:?}", flow.print());
         }
+        assert_eq!(flows.len(), 2);
+    }
+    #[test]
+    fn real_flow() {
+        let input = Vec::from([
+            PUSH1 as u32,
+            0x40, //0x0,0x1
+            PUSH1 as u32,
+            0x60, //0x2,0x3
+            MSTORE as u32,
+            OPCODE_CALLVALUE as u32,
+            DUP1 as u32,
+            ISZERO as u32,
+            PUSH2 as u32,
+            00 as u32,
+            10 as u32,
+            JUMPI as u32,
+            PUSH1 as u32,
+            00 as u32,
+            DUP1 as u32,
+            REVERT as u32,
+            JUMPDEST as u32,
+            REVERT as u32,
+        ]);
+
+        let parser = Parser::new(input);
+        let instruction_sets = parser.get_instruction_sets();
+        let instructions = parser.get_instructions();
+        assert_eq!(instruction_sets.len(), 2);
+
+        let mut flow_parser = FlowParser::new(instructions);
+        flow_parser.parse_flows();
+        let flows = flow_parser.flows;
         assert_eq!(flows.len(), 2);
     }
 }

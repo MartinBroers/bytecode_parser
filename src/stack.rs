@@ -1,10 +1,18 @@
+use std::fmt::Debug;
+
 use crate::hex::Hex;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct StackElement {
     pub value: Hex,
     pub origin: Hex,
     pub size: usize,
+}
+
+impl Debug for StackElement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:04x}", self.value)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +41,10 @@ impl Stack {
 
     pub fn get(&self, index: usize) -> Option<&StackElement> {
         self.elements.get(index)
+    }
+
+    pub fn swap(&mut self, a: usize, b: usize) {
+        self.elements.swap(a, b)
     }
 
     pub fn len(&self) -> usize {

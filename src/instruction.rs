@@ -1,5 +1,5 @@
 use core::fmt;
-use log::{debug, info};
+use std::num;
 
 use crate::{
     hex::Hex,
@@ -34,8 +34,8 @@ impl Instruction {
         Ok(OpCodeResult::Ok)
     }
     fn sub(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
-        let right = stack.pop().ok_or(())?;
         let left = stack.pop().ok_or(())?;
+        let right = stack.pop().ok_or(())?;
         stack.push(StackElement {
             value: left.value - right.value,
             origin: self.index,
@@ -82,21 +82,14 @@ impl Instruction {
         Ok(OpCodeResult::Ok)
     }
     fn swapx(&self, num_swap: u32, stack: &mut Stack) -> Result<OpCodeResult, ()> {
-        let mut swaps = Vec::new();
-        for _ in 0..=num_swap {
-            swaps.push(match stack.pop() {
-                Some(v) => v,
-                None => return Err(()),
-            });
-        }
-        swaps.reverse();
-        for _ in 0..=num_swap {
-            stack.push(swaps.pop().unwrap());
-        }
+        let num_swap = num_swap as usize;
+        assert!(stack.len() >= num_swap);
+        stack.swap(stack.len() - num_swap - 1, stack.len() - 1);
+
         Ok(OpCodeResult::Ok)
     }
     fn pushx(&self, num_push: usize, stack: &mut Stack, pc: &mut Hex) -> Result<OpCodeResult, ()> {
-        *pc += Hex(1) + Hex((num_push - 1) as u64);
+        *pc += Hex(1) + Hex((num_push - 1) as u128);
         assert!(self.args.len() == num_push);
         let mut value = Hex(0);
         for element in &self.args {
@@ -112,7 +105,6 @@ impl Instruction {
     }
 
     fn dupx(&self, num_dup: usize, stack: &mut Stack) -> Result<OpCodeResult, ()> {
-        debug!("dupx: DUP{}, stack: {:?}", num_dup, stack);
         let dup = stack.get(stack.len() - num_dup);
         assert!(dup.is_some());
         if let Some(value) = dup {
@@ -126,11 +118,6 @@ impl Instruction {
         let shift = stack.pop().ok_or(())?;
         let value = stack.pop().ok_or(())?;
 
-        info!(
-            "executing shr, shift={}, value={}",
-            shift.value, value.value
-        );
-
         stack.push(StackElement {
             value: value.value >> shift.value,
             origin: self.index,
@@ -139,19 +126,26 @@ impl Instruction {
 
         Ok(OpCodeResult::Ok)
     }
+
+    fn sload(&self, stack: &mut Stack, memory: &Memory) -> Result<OpCodeResult, ()> {
+        let key = stack.pop().ok_or(())?;
+        stack.push(memory.sload(key.value));
+        Ok(OpCodeResult::Ok)
+    }
+
     fn jumpdest(&self) -> Result<OpCodeResult, ()> {
         Ok(OpCodeResult::Ok)
     }
     fn jumpi(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
-        let target = stack.pop();
-        let condition = stack.pop();
+        let target = stack.pop().ok_or(())?;
+        let condition = stack.pop().ok_or(())?;
         println!("jumpi: target: {:?}, condition: {:?}", target, condition);
         let jump_instruction = JumpInstruction {
             instruction: self.clone(),
             jump_type: JumpType::Conditional,
             target,
-            condition,
-            source: self.index,
+            condition: Some(condition),
+            source: self.index.clone(),
         };
 
         Ok(OpCodeResult::ConditionalJumpInstruction(jump_instruction))
@@ -160,9 +154,9 @@ impl Instruction {
         let jump_instruction = JumpInstruction {
             instruction: self.clone(),
             jump_type: JumpType::Unconditional,
-            target: stack.pop(),
+            target: stack.pop().ok_or(())?,
             condition: None,
-            source: self.index,
+            source: self.index.clone(),
         };
 
         Ok(OpCodeResult::JumpInstruction(jump_instruction))
@@ -190,12 +184,10 @@ impl Instruction {
     }
 
     fn calldataload(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
+        let offset: usize = stack.pop().unwrap().value.0.try_into().unwrap();
         if let Some(calldata) = unsafe { &CALLDATA } {
-            stack.push(StackElement {
-                origin: self.index,
-                value: calldata.value,
-                size: calldata.size,
-            });
+            let value = calldata.get(offset).unwrap();
+            stack.push(value);
         } else {
             stack.push(StackElement {
                 origin: self.index,
@@ -207,11 +199,8 @@ impl Instruction {
     }
     fn calldatasize(&self, stack: &mut Stack) -> Result<OpCodeResult, ()> {
         if let Some(calldata) = unsafe { &CALLDATA } {
-            stack.push(StackElement {
-                origin: self.index,
-                value: Hex(calldata.size.try_into().unwrap()),
-                size: calldata.size,
-            });
+            let value = calldata.size();
+            stack.push(value);
         } else {
             stack.push(StackElement {
                 origin: self.index,
@@ -394,7 +383,7 @@ impl Instruction {
             OpCodes::SHL => todo!(),
             OpCodes::SHR => self.shr(stack),
             OpCodes::SIGNEXTEND => todo!(),
-            OpCodes::SLOAD => todo!(),
+            OpCodes::SLOAD => self.sload(stack, memory),
             OpCodes::SLT => self.slt(stack),
             OpCodes::SMOD => todo!(),
             OpCodes::SSTORE => todo!(),
@@ -444,7 +433,7 @@ pub enum JumpType {
 pub struct JumpInstruction {
     pub instruction: Instruction,
     pub jump_type: JumpType,
-    pub target: Option<StackElement>,
+    pub target: StackElement,
     pub source: Hex,
     pub condition: Option<StackElement>,
 }
@@ -463,7 +452,7 @@ pub struct InstructionSet {
     pub start: Hex,
     pub end: Hex,
 
-    pub jumps: Vec<JumpInstruction>,
+    pub jump: Option<JumpInstruction>,
 
     pub stack: Stack,
 }
@@ -473,7 +462,7 @@ impl std::fmt::Debug for InstructionSet {
         writeln!(
             f,
             "start: {}, end: {}, jumps: {:?}, stack: {:?}",
-            self.start, self.end, self.jumps, self.stack
+            self.start, self.end, self.jump, self.stack
         )
         .unwrap();
         Ok(())

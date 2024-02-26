@@ -1,12 +1,11 @@
 use core::fmt;
-use std::num::Wrapping;
 use std::{
-    num::ParseIntError,
-    ops::{Add, AddAssign, BitAnd, Mul, Rem, Shl, Shr, Sub},
+    num::{ParseIntError, Wrapping},
+    ops::{Add, AddAssign, BitAnd, Index, Mul, Range, Rem, Shl, Shr, Sub},
 };
 
 #[derive(Clone, Default, PartialEq, Copy, PartialOrd, Hash, Eq, Ord)]
-pub struct Hex(pub u64);
+pub struct Hex(pub u128);
 impl AddAssign for Hex {
     fn add_assign(&mut self, rhs: Self) {
         self.0 += rhs.0;
@@ -72,30 +71,39 @@ impl Rem for Hex {
 
 impl From<usize> for Hex {
     fn from(value: usize) -> Self {
-        Hex(value as u64)
+        Hex(value as u128)
     }
 }
 impl From<i32> for Hex {
     fn from(value: i32) -> Self {
-        Hex(value as u64)
+        Hex(value as u128)
     }
 }
 impl From<u32> for Hex {
     fn from(value: u32) -> Self {
-        Hex(value as u64)
+        Hex(value as u128)
     }
 }
+
 impl TryFrom<&String> for Hex {
     type Error = ParseIntError;
 
     fn try_from(value: &String) -> Result<Self, Self::Error> {
-        Ok(Hex(value.parse::<u64>()?))
+        let mut result = Hex::from(0);
+        let mut value: String = value.chars().rev().collect();
+        while let Some(value) = value.pop() {
+            let hex = Hex(value.to_digit(16).unwrap().into());
+            result = result << Hex::from(4);
+            result += hex;
+        }
+
+        Ok(result)
     }
 }
 
 impl fmt::LowerHex for Hex {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let val = self.0;
+        let val = &self.0;
         fmt::LowerHex::fmt(&val, f)
     }
 }

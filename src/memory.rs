@@ -80,4 +80,22 @@ impl Memory {
             };
         }
     }
+
+    pub fn sload(&self, offset: Hex) -> StackElement {
+        let mut result: StackElement = StackElement {
+            value: Hex(0),
+            origin: Hex(0),
+            size: 32,
+        };
+        let offset = offset.0 as usize;
+        for i in offset..(offset + 32) {
+            let element = self.elements.get(i).unwrap();
+            result.value = result.value << Hex(8);
+            result.value += element.value;
+            if let Some(origin) = element.origin {
+                result.origin = origin;
+            }
+        }
+        result
+    }
 }

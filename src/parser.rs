@@ -1,12 +1,13 @@
-use log::{info, warn};
+use log::{debug, info, warn};
 use std::collections::HashMap; // Use log crate when building application
 
 use crate::{
+    flow::ParsedInstructionSet,
     hex::Hex,
     instruction::{Instruction, InstructionSet, JumpInstruction, JumpType},
     memory::Memory,
     opcode::{self, opcodes},
-    stack::Stack,
+    stack::{self, Stack},
     utils::find_sequence,
 };
 
@@ -77,10 +78,8 @@ fn parse_instruction_sets(
 ) -> HashMap<Hex, InstructionSet> {
     let mut instruction_sets: HashMap<Hex, InstructionSet> = HashMap::new();
 
-    let mut stack_pointer = 0x0.into();
-    // Nothing happens with this memory, as it is more relevant to the flow parser.
-    let mut memory = Memory::new();
-    while let Some(instruction_set) = create_instruction_set(stack_pointer, &instructions) {
+    let mut stack_pointer: Hex = 0x0.into();
+    while let Some(instruction_set) = create_instruction_set(stack_pointer.clone(), &instructions) {
         info!("instruction_set: {:?}", instruction_set);
         instruction_sets.insert(stack_pointer, instruction_set.clone());
         stack_pointer = instruction_set.end + Hex(1);
@@ -93,9 +92,9 @@ fn create_instruction_set(
     instructions: &HashMap<Hex, Instruction>,
 ) -> Option<InstructionSet> {
     let mut instructions_section: InstructionSet = InstructionSet {
-        start: stack_pointer,
-        end: stack_pointer,
-        jumps: Vec::new(),
+        start: stack_pointer.clone(),
+        end: stack_pointer.clone(),
+        jump: None,
         stack: Stack::new(),
     };
     let stack_pointer_in = stack_pointer.clone();
@@ -103,21 +102,21 @@ fn create_instruction_set(
     while let Some(instruction) = instructions.get(&stack_pointer) {
         info!("parsing {:?}: {:?}", stack_pointer, instruction);
         match instruction.opcode.code {
-            opcode::OpCodes::JUMPI => instructions_section.jumps.push(JumpInstruction {
-                instruction: instruction.clone(),
-                jump_type: JumpType::Conditional,
-                target: None,
-                source: instruction.index,
-                condition: None,
-            }),
+            //opcode::OpCodes::JUMPI => instructions_section.jumps.push(JumpInstruction {
+            //    instruction: instruction.clone(),
+            //    jump_type: JumpType::Conditional,
+            //    target: None,
+            //    source: instruction.index,
+            //    condition: None,
+            //}),
             opcode::OpCodes::JUMP => {
-                instructions_section.jumps.push(JumpInstruction {
-                    instruction: instruction.clone(),
-                    jump_type: JumpType::Unconditional,
-                    target: None,
-                    source: instruction.index,
-                    condition: None,
-                });
+                //instructions_section.jump = Some(JumpInstruction {
+                //    instruction: instruction.clone(),
+                //    jump_type: JumpType::Unconditional,
+                //    target: None,
+                //    source: instruction.index,
+                //    condition: None,
+                //});
                 break;
             }
             opcode::OpCodes::RETURN
@@ -128,7 +127,7 @@ fn create_instruction_set(
                 break;
             }
             _ => {
-                stack_pointer += Hex(instruction.opcode.input_arguments as u64);
+                stack_pointer += Hex(instruction.opcode.input_arguments as u128);
             }
         }
         stack_pointer += 1.into();
@@ -146,56 +145,74 @@ pub fn parse_instruction_set(
     stack_pointer: Hex,
     instructions: &HashMap<Hex, Instruction>,
     input_stack: Option<Stack>,
+    memory: Memory,
     end_at: Option<Hex>,
-    memory: &mut Memory,
-) -> Option<InstructionSet> {
-    let mut instructions_section: InstructionSet = InstructionSet {
-        start: stack_pointer,
-        end: stack_pointer,
-        jumps: Vec::new(),
-        stack: Stack::new(),
-    };
-    let stack_pointer_in = stack_pointer.clone();
+) -> Vec<ParsedInstructionSet> {
+    let mut instruction_sections: Vec<ParsedInstructionSet> = vec![];
+    let start_stack_pointer = stack_pointer.clone();
     let mut stack: Stack = input_stack.unwrap_or(Stack::new());
-    let mut stack_pointer = stack_pointer;
+    let mut memory = memory.clone();
+    let mut stack_pointer = stack_pointer.clone();
     while let Some(instruction) = instructions.get(&stack_pointer) {
-        info!(
-            "parsing {:?} {:?}, stack: {:?} ",
-            stack_pointer, instruction, stack
-        );
-        if let Some(end_at) = end_at {
-            if stack_pointer > end_at {
+        if let Some(ref end_at) = end_at {
+            if stack_pointer > *end_at {
+                debug!("Stopping parse of instruction set, because we reached the end.");
                 break;
             }
         }
+        info!(
+            "parsing {:?} {:?},\t stack: {:?}",
+            stack_pointer, instruction, stack
+        );
         let instruction = instruction.clone();
-        let result = instruction.parse(&mut stack, &mut stack_pointer, memory);
+        let result = instruction.parse(&mut stack, &mut stack_pointer, &mut memory);
         if let Ok(opcode_result) = result {
             match opcode_result {
                 opcode::OpCodeResult::ConditionalJumpInstruction(mut ji) => {
-                    ji.source = instructions_section.start;
-                    instructions_section.jumps.push(ji);
+                    ji.source = start_stack_pointer.clone();
+                    let instructions_section: ParsedInstructionSet = ParsedInstructionSet {
+                        start: start_stack_pointer.clone(),
+                        end: stack_pointer.clone(),
+                        jump: Some(ji.clone()),
+                        stack: stack.clone(),
+                        memory: memory.clone(),
+                        target: Some(ji.target.clone()),
+                    };
+                    instruction_sections.push(instructions_section.clone());
                 }
                 opcode::OpCodeResult::JumpInstruction(mut ji) => {
-                    ji.source = instructions_section.start;
-                    instructions_section.jumps.push(ji);
+                    ji.source = start_stack_pointer.clone();
+                    let instructions_section: ParsedInstructionSet = ParsedInstructionSet {
+                        start: start_stack_pointer,
+                        end: stack_pointer,
+                        jump: Some(ji.clone()),
+                        stack: stack.clone(),
+                        memory: memory.clone(),
+                        target: Some(ji.target.clone()),
+                    };
+                    instruction_sections.push(instructions_section.clone());
                     break;
                 }
-                opcode::OpCodeResult::End => break,
+                opcode::OpCodeResult::End => {
+                    let instructions_section: ParsedInstructionSet = ParsedInstructionSet {
+                        start: start_stack_pointer,
+                        end: stack_pointer,
+                        jump: None,
+                        stack: stack.clone(),
+                        memory: memory.clone(),
+                        target: None,
+                    };
+                    instruction_sections.push(instructions_section);
+                    break;
+                }
                 opcode::OpCodeResult::Ok => (),
             }
         } else {
-            warn!("Could not parse instruction: {:?}", instruction);
+            panic!("Could not parse instruction: {:?}", instruction);
         }
         stack_pointer += 1.into();
     }
-    if stack_pointer != stack_pointer_in {
-        instructions_section.stack = stack;
-        instructions_section.end = stack_pointer;
-        Some(instructions_section)
-    } else {
-        None
-    }
+    instruction_sections
 }
 fn bytecode_to_instructions(raw_bytecode: Vec<u32>) -> HashMap<Hex, Instruction> {
     let mut instructions: HashMap<Hex, Instruction> = HashMap::new();

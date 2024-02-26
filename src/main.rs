@@ -1,3 +1,4 @@
+mod calldata;
 mod flow;
 mod flow_parser;
 mod hex;
@@ -8,10 +9,11 @@ mod parser;
 mod stack;
 mod utils;
 
+use calldata::CallData;
 use clap::Parser;
 use flow_parser::FlowParser;
 use hex::Hex;
-use log::{error, warn};
+use log::{error, info, warn};
 use parser::Parser as BytecodeParser;
 use stack::StackElement;
 use std::{
@@ -21,7 +23,7 @@ use std::{
 };
 
 pub static mut CALLVALUE: Option<StackElement> = None;
-pub static mut CALLDATA: Option<StackElement> = None;
+pub static mut CALLDATA: Option<CallData> = None;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -80,18 +82,8 @@ fn parse_args(args: &Args) -> Result<(), std::io::Error> {
     }
 
     if let Some(calldata) = &args.calldata {
-        let value: Hex = match Hex::try_from(calldata) {
-            Ok(v) => v,
-            Err(e) => return Err(Error::new(ErrorKind::InvalidInput, e)),
-        };
-        unsafe {
-            CALLDATA = Some(StackElement {
-                value,
-                origin: Hex(0),
-                size: (format!("{:x}", value.0).len() + 1) / 2 as usize,
-            });
-        }
-    }
+        unsafe { CALLDATA = Some(CallData::new(calldata.to_string())) }
+    };
     Ok(())
 }
 
@@ -140,9 +132,11 @@ fn main() -> Result<(), std::io::Error> {
         return Err(Error::from(io::ErrorKind::InvalidData));
     }
     let parser = BytecodeParser::new(bytecode);
-    let mut flow_parser = FlowParser::new(parser.get_instruction_sets(), parser.get_instructions());
+    let mut flow_parser = FlowParser::new(parser.get_instructions());
     flow_parser.parse_flows();
+    warn!("{} flows found.", flow_parser.flows().len());
     for flow in flow_parser.flows() {
+        warn!("flow");
         flow.print();
     }
 
